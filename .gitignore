@@ -1,0 +1,31 @@
+# Secrets
+.env
+.env.local
+
+# Data (large / rights-sensitive — users generate these locally)
+# corpus/ = downloaded corpus, books/ = copyrighted PDFs (not redistributed),
+# chroma_db/ = vector store + BM25 index, manifest.json = corpus manifest
+corpus/
+books/
+chroma_db/
+manifest.json
+*.pkl
+*.db
+*.db-*
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Node / frontend build
+webnext/node_modules/
+webnext/.next/
+
+# Deprecated Vite prototype (superseded by webnext/)
+web/
+
+# Tooling / OS
+.claude/
+.DS_Store

@@ -1,0 +1,9 @@
+# annual_reports seed list  --  direct PDF URLs of corporate annual reports / investor decks.
+# Format:  URL   or   URL | Title.   '#' lines ignored.
+#
+# The scraper in annual_reports.py tries annualreports.com automatically, but a
+# curated seed list is the reliable path. Grab "Download PDF" links from any
+# investor-relations page (e.g. investor.apple.com, abc.xyz/investor) and paste here.
+#
+# Example (uncomment / replace with a current link):
+# https://www.annualreports.com/HostedData/AnnualReports/PDF/NASDAQ_AAPL_2023.pdf | Apple 2023 Annual Report

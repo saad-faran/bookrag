@@ -1,0 +1,2 @@
+# Corpus acquisition pipeline (acquire.py). Kept separate from the RAG app deps.
+requests>=2.31.0

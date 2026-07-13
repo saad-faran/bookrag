@@ -1,0 +1,17 @@
+# open_books seed list  --  legally usable, full-length book PDFs.
+# Format:  URL                                   (title inferred from filename)
+#      or: URL | Human Readable Title
+# Lines starting with '#' are ignored.
+#
+# Only add:
+#   - open-license / public-domain textbooks, or
+#   - book PDFs you personally hold the rights to use.
+# Do NOT paste pirated copyrighted ebooks here -- that defeats the whole point
+# (unsellable + CV liability). See downloaders/open_books.py.
+#
+# --- Ready-to-try open-license examples (uncomment to use) ---
+# https://assets.openstax.org/oscms-prodcms/media/documents/PrinciplesofFinance-WEB.pdf | OpenStax Principles of Finance
+# https://assets.openstax.org/oscms-prodcms/media/documents/PrinciplesofEconomics3e-WEB.pdf | OpenStax Principles of Economics 3e
+#
+# Note: OpenStax rotates its asset URLs. If one 404s, grab the current PDF link
+# from openstax.org/details/books/principles-finance and paste it here.
