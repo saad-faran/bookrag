@@ -35,10 +35,43 @@ class MockChat:
 
         if "respond only with" in low and "rewritten_query" in low:
             q = _extract_after(text, "User query:") or "your question"
-            general = any(w in q.lower() for w in ("hi", "hello", "hey", "thanks", "thank you",
-                                                   "who made you", "what can you do", "how are you"))
-            return SimpleNamespace(content=json.dumps(
-                {"rewritten_query": q.strip(), "route": "general" if general else "rag"}))
+            ql = q.lower()
+            if any(w in ql for w in ("weather", "stock", "price", "convert", "calculate",
+                                     "how much is", "% of", "crypto", "bitcoin", "what time")):
+                route = "tool"
+            elif any(w in ql for w in ("news", "latest", "today", "recent", "search the web",
+                                       "current", "headlines")):
+                route = "search"
+            elif any(w in ql for w in ("hi", "hello", "hey", "thanks", "thank you",
+                                       "who made you", "what can you do", "how are you")):
+                route = "general"
+            else:
+                route = "rag"
+            return SimpleNamespace(content=json.dumps({"rewritten_query": q.strip(), "route": route}))
+
+        if "tool router" in low:  # tool selection
+            q = _extract_after(text, "").lower() + low
+            if "weather" in q:
+                sel = {"tool": "get_weather", "args": {"location": "London"}}
+            elif "convert" in q or " to eur" in q or " to usd" in q:
+                sel = {"tool": "convert_currency", "args": {"amount": 100, "from_currency": "USD", "to_currency": "EUR"}}
+            elif "bitcoin" in q or "crypto" in q:
+                sel = {"tool": "get_crypto_price", "args": {"coin": "bitcoin", "vs_currency": "usd"}}
+            elif "time" in q:
+                sel = {"tool": "get_current_time", "args": {"timezone": "UTC"}}
+            elif "stock" in q or "price" in q:
+                sel = {"tool": "get_stock_quote", "args": {"symbol": "NVDA"}}
+            else:
+                sel = {"tool": "calculator", "args": {"expression": "2+2"}}
+            return SimpleNamespace(content=json.dumps(sel))
+
+        if "tool called:" in low or "tool result" in low:  # tool answer synthesis
+            return SimpleNamespace(content="**[MOCK]** Here's the live result from the tool (real values "
+                                           "appear when a GROQ_API_KEY is set).")
+
+        if "web results:" in low:  # search answer synthesis
+            return SimpleNamespace(content="**[MOCK]** Based on the web results [1][2], here's a concise "
+                                           "summary (set a GROQ_API_KEY for real synthesis).")
 
         if "strict fact-checker" in low:
             return SimpleNamespace(content=json.dumps(

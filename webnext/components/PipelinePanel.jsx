@@ -5,33 +5,40 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  Compass, Search, PenLine, ShieldCheck, RefreshCw, MessageCircle, Package, Check, Loader2, GitBranch,
+  Compass, Search, PenLine, ShieldCheck, RefreshCw, MessageCircle, Package, Check, Loader2,
+  GitBranch, Wrench, Globe,
 } from "lucide-react";
 import PanelControls from "./PanelControls.jsx";
 
 const ICONS = { compass: Compass, search: Search, pen: PenLine, shield: ShieldCheck,
-  refresh: RefreshCw, chat: MessageCircle, package: Package };
+  refresh: RefreshCw, chat: MessageCircle, package: Package, wrench: Wrench, globe: Globe };
 
 const POS = {
   rewrite_and_route: { x: 40, y: 15 },
-  general_answer:    { x: 225, y: 15 },
-  retrieve:          { x: 40, y: 110 },
-  generate:          { x: 40, y: 200 },
-  evaluate_grounding:{ x: 40, y: 290 },
-  expand_query:      { x: 225, y: 290 },
-  build_final_answer:{ x: 40, y: 390 },
+  general_answer:    { x: 235, y: 15 },
+  tool_call:         { x: 235, y: 95 },
+  internet_search:   { x: 235, y: 175 },
+  retrieve:          { x: 40, y: 125 },
+  generate:          { x: 40, y: 215 },
+  evaluate_grounding:{ x: 40, y: 305 },
+  expand_query:      { x: 235, y: 305 },
+  build_final_answer:{ x: 40, y: 405 },
 };
 
 // target handles available: Top (default), "l" (Left). source handles: Bottom (default), "r" (Right).
 const EDGES = [
   { id: "e1", source: "rewrite_and_route", target: "retrieve" },
   { id: "e2", source: "rewrite_and_route", target: "general_answer", sourceHandle: "r", targetHandle: "l" },
+  { id: "e9", source: "rewrite_and_route", target: "tool_call", sourceHandle: "r", targetHandle: "l" },
+  { id: "e10", source: "rewrite_and_route", target: "internet_search", sourceHandle: "r", targetHandle: "l" },
   { id: "e3", source: "retrieve", target: "generate" },
   { id: "e4", source: "generate", target: "evaluate_grounding" },
   { id: "e5", source: "evaluate_grounding", target: "build_final_answer" },
   { id: "e6", source: "evaluate_grounding", target: "expand_query", sourceHandle: "r", targetHandle: "l" },
   { id: "e7", source: "expand_query", target: "retrieve", targetHandle: "l" },
   { id: "e8", source: "general_answer", target: "build_final_answer", targetHandle: "l" },
+  { id: "e11", source: "tool_call", target: "build_final_answer", targetHandle: "l" },
+  { id: "e12", source: "internet_search", target: "build_final_answer", targetHandle: "l" },
 ];
 
 function PipeNode({ data }) {

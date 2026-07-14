@@ -15,9 +15,13 @@ from typing import TypedDict
 
 from langgraph.graph import StateGraph, START, END
 
+import json
+
 import config
 from utils.llm import make_llm, invoke_text, parse_json
 from utils.retrieval import get_retriever
+from utils.tools import TOOL_MENU, execute_tool
+from utils.websearch import web_search
 
 
 class RAGState(TypedDict, total=False):
@@ -35,6 +39,8 @@ class RAGState(TypedDict, total=False):
     disclaimer: str
     sources: list
     chat_context: list
+    tool_calls: list
+    search_results: list
 
 
 DISCLAIMER = (
@@ -71,22 +77,27 @@ def build_graph():
         system = "You are a query processor. Respond ONLY with valid JSON, no explanation, no markdown fences."
         user = (
             "Given the user query below, do two things:\n"
-            "1. Rewrite it to be clearer and more search-friendly for a finance/business/"
-            "wealth document collection. Keep the meaning identical.\n"
-            "2. Classify the route:\n"
-            "   - \"general\" if conversational (hi, thanks, who made you, what can you do).\n"
-            "   - \"rag\" if about finance, wealth, investing, companies, markets, or any topic "
-            "answerable from documents.\n"
-            'Respond ONLY with: {"rewritten_query": "...", "route": "general or rag"}\n\n'
+            "1. Rewrite it to be clearer and more search-friendly. Keep the meaning identical.\n"
+            "2. Classify the route into exactly one of:\n"
+            "   - \"tool\"    : needs live/computed data — weather, a stock or crypto price, a "
+            "currency conversion, a math calculation, or the current time.\n"
+            "   - \"search\"  : needs current, real-world or recent web info NOT in a finance "
+            "document library — latest news, recent events, today's headlines, a current fact.\n"
+            "   - \"rag\"     : answerable from a finance/business/wealth document corpus "
+            "(companies, filings, markets, investing concepts).\n"
+            "   - \"general\" : conversational (hi, thanks, who made you, what can you do).\n"
+            'Respond ONLY with: {"rewritten_query": "...", "route": "tool|search|rag|general"}\n\n'
             f"User query: {raw}"
         )
         data = parse_json(invoke_text(router, [
             {"role": "system", "content": system}, {"role": "user", "content": user},
         ]), default={})
         route = data.get("route", "rag")
+        if route not in ("tool", "search", "rag", "general"):
+            route = "rag"
         return {
             "rewritten_query": data.get("rewritten_query", raw) or raw,
-            "route": "general" if route == "general" else "rag",
+            "route": route,
             "retry_count": 0,
         }
 
@@ -177,9 +188,62 @@ def build_graph():
         messages.append({"role": "user", "content": state["raw_query"]})
         return {"generated_answer": invoke_text(general_llm, messages)}
 
+    def tool_call(state: RAGState) -> RAGState:
+        raw = state["raw_query"]
+        # 1) pick a tool + args (JSON — portable + mockable)
+        sel_system = (
+            "You are a tool router. Choose the ONE best tool for the user's request and its "
+            "arguments. Respond ONLY with JSON: {\"tool\": \"name\", \"args\": {...}}.\n\nTools:\n"
+            + TOOL_MENU
+        )
+        sel = parse_json(invoke_text(router, [
+            {"role": "system", "content": sel_system},
+            {"role": "user", "content": raw},
+        ]), default={})
+        name, args = sel.get("tool", ""), sel.get("args", {}) or {}
+        result = execute_tool(name, args) if name else {"error": "no tool selected"}
+        calls = [{"name": name, "args": args, "result": result}]
+
+        # 2) synthesize a natural answer from the tool result
+        syn_system = (
+            "You are BookRAG, a helpful assistant. Answer the user's question directly, naturally and "
+            "concisely using the tool result below. Copy any figures EXACTLY as given — same digits, "
+            "magnitude and units (e.g. 345,000,000 is 'about 345 million', never 'billion'); prefer the "
+            "'formatted' value when present. Don't disclaim your expertise — just answer helpfully in a "
+            "sentence or two."
+        )
+        syn_user = f"Question: {raw}\nTool called: {name}({json.dumps(args)})\nResult: {json.dumps(result)}"
+        messages = [{"role": "system", "content": syn_system}]
+        messages.extend(state.get("chat_context", []))
+        messages.append({"role": "user", "content": syn_user})
+        return {"tool_calls": calls, "generated_answer": invoke_text(gen, messages)}
+
+    def internet_search(state: RAGState) -> RAGState:
+        results = web_search(state.get("rewritten_query") or state["raw_query"], max_results=5)
+        if not results:
+            return {"search_results": [],
+                    "generated_answer": "I couldn't reach the web search service just now. "
+                    "Please try again, or ask me something from the finance knowledge base."}
+        context = "\n".join(
+            f"[{i+1}] {r['title']}\n{r['snippet']}\n({r['url']})" for i, r in enumerate(results))
+        system = (
+            "You are BookRAG. Answer the user's question using the web search results below. "
+            "Write naturally and concisely, and cite sources inline like [1], [2]. If the results "
+            "don't actually answer the question, say so briefly."
+        )
+        user = f"Question: {state['raw_query']}\n\nWeb results:\n{context}\n\nAnswer:"
+        messages = [{"role": "system", "content": system}]
+        messages.extend(state.get("chat_context", []))
+        messages.append({"role": "user", "content": user})
+        sources = [{"title": r["title"], "source": "web", "page": "", "url": r["url"],
+                    "element_type": "web", "rrf_score": 0} for r in results]
+        return {"search_results": results, "sources": sources,
+                "generated_answer": invoke_text(gen, messages)}
+
     def build_final_answer(state: RAGState) -> RAGState:
         answer = state.get("generated_answer", "")
-        if state.get("route") == "rag":
+        route = state.get("route")
+        if route == "rag":
             sources = [
                 {"title": d.get("title", ""), "source": d.get("source", ""),
                  "page": d.get("page", ""), "element_type": d.get("element_type", "text"),
@@ -187,16 +251,17 @@ def build_graph():
                 for d in state.get("retrieved_docs", [])
             ]
             grounded = state.get("is_grounded", False)
-            return {
-                "final_answer": answer,
-                "disclaimer": "" if grounded else DISCLAIMER,
-                "sources": sources,
-            }
+            return {"final_answer": answer, "disclaimer": "" if grounded else DISCLAIMER,
+                    "sources": sources}
+        if route == "search":
+            return {"final_answer": answer, "disclaimer": "", "sources": state.get("sources", [])}
+        # tool / general
         return {"final_answer": answer, "disclaimer": "", "sources": []}
 
     # ---------------------------------------------------------------- graph
     def route_after_rewrite(state: RAGState) -> str:
-        return "general_answer" if state["route"] == "general" else "retrieve"
+        return {"general": "general_answer", "tool": "tool_call",
+                "search": "internet_search"}.get(state["route"], "retrieve")
 
     def route_after_eval(state: RAGState) -> str:
         if state.get("is_grounded") or state.get("retry_count", 0) >= 1:
@@ -208,18 +273,23 @@ def build_graph():
         ("rewrite_and_route", rewrite_and_route), ("retrieve", retrieve),
         ("generate", generate), ("evaluate_grounding", evaluate_grounding),
         ("expand_query", expand_query), ("general_answer", general_answer),
+        ("tool_call", tool_call), ("internet_search", internet_search),
         ("build_final_answer", build_final_answer),
     ]:
         g.add_node(name, fn)
 
     g.add_edge(START, "rewrite_and_route")
-    g.add_conditional_edges("rewrite_and_route", route_after_rewrite,
-                            {"general_answer": "general_answer", "retrieve": "retrieve"})
+    g.add_conditional_edges("rewrite_and_route", route_after_rewrite, {
+        "general_answer": "general_answer", "retrieve": "retrieve",
+        "tool_call": "tool_call", "internet_search": "internet_search",
+    })
     g.add_edge("retrieve", "generate")
     g.add_edge("generate", "evaluate_grounding")
     g.add_conditional_edges("evaluate_grounding", route_after_eval,
                             {"expand_query": "expand_query", "build_final_answer": "build_final_answer"})
     g.add_edge("expand_query", "retrieve")
     g.add_edge("general_answer", "build_final_answer")
+    g.add_edge("tool_call", "build_final_answer")
+    g.add_edge("internet_search", "build_final_answer")
     g.add_edge("build_final_answer", END)
     return g.compile()

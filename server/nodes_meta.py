@@ -59,6 +59,24 @@ NODES = [
                 "back toward the finance/wealth domain.",
     },
     {
+        "id": "tool_call",
+        "label": "Tool Call",
+        "icon": "wrench",
+        "model": "router+heavy",
+        "short": "Calls a live API/function",
+        "desc": "For live or computed data, the agent picks a tool (weather, stock/crypto price, "
+                "currency conversion, calculator, time), calls the real API, and answers from the result.",
+    },
+    {
+        "id": "internet_search",
+        "label": "Internet Search",
+        "icon": "globe",
+        "model": "heavy",
+        "short": "Searches the live web",
+        "desc": "For fresh or out-of-corpus questions, searches the web (DuckDuckGo) and answers from "
+                "the results with inline citations.",
+    },
+    {
         "id": "build_final_answer",
         "label": "Finalize",
         "icon": "package",

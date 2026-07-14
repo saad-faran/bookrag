@@ -66,7 +66,10 @@ export default function RunInspector({ record }) {
             {record.rewritten_query && record.rewritten_query !== record.raw_query &&
               <Row label="Rewritten" value={record.rewritten_query} />}
             {record.expanded_query && <Row label="Expanded" value={record.expanded_query} />}
-            <Row label="Route" value={record.route === "general" ? "💬 general" : "📚 knowledge base"} />
+            <Row label="Route" value={{
+              general: "💬 general chat", tool: "🔧 tool / function call",
+              search: "🌐 internet search", rag: "📚 knowledge base",
+            }[record.route] || record.route} />
           </div>
 
           {/* drafts before grounding */}
@@ -77,6 +80,39 @@ export default function RunInspector({ record }) {
               </div>
               <div className="space-y-1.5">
                 {attempts.map((a, i) => <Draft key={i} attempt={a} index={i} total={attempts.length} />)}
+              </div>
+            </div>
+          )}
+
+          {/* tool calls */}
+          {(record.tool_calls || []).length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Tool calls</div>
+              <div className="space-y-1">
+                {record.tool_calls.map((t, i) => (
+                  <div key={i} className="rounded-lg border border-[var(--border)] bg-[var(--card2)] p-2 text-[11px]">
+                    <div className="font-mono text-indigo-300">{t.name}({JSON.stringify(t.args)})</div>
+                    <div className="font-mono text-[10.5px] text-emerald-300 mt-1 break-words">
+                      → {JSON.stringify(t.result)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* web search results */}
+          {(record.search_results || []).length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Web results</div>
+              <div className="space-y-1">
+                {record.search_results.map((r, i) => (
+                  <a key={i} href={r.url} target="_blank" rel="noreferrer"
+                    className="block rounded-lg border border-[var(--border)] bg-[var(--card2)] p-2 hover:border-indigo-500/50 transition">
+                    <div className="text-[11px] text-sky-300 truncate">[{i + 1}] {r.title}</div>
+                    <div className="text-[10px] text-slate-500 truncate">{r.url}</div>
+                  </a>
+                ))}
               </div>
             </div>
           )}

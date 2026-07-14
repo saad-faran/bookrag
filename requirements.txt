@@ -16,6 +16,7 @@ rank-bm25>=0.2.2
 tiktoken>=0.7
 python-dotenv>=1.0
 requests>=2.31
+ddgs>=9.0                # keyless internet search (DuckDuckGo) for the search tool
 
 # --- multimodal ingestion ---
 pymupdf>=1.24          # PDF text + native table extraction + page rendering

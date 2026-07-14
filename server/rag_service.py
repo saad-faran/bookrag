@@ -29,7 +29,8 @@ def warmup() -> None:
 
 def _next_node(node: str, s: dict) -> str | None:
     if node == "rewrite_and_route":
-        return "general_answer" if s.get("route") == "general" else "retrieve"
+        return {"general": "general_answer", "tool": "tool_call",
+                "search": "internet_search"}.get(s.get("route"), "retrieve")
     if node == "retrieve":
         return "generate"
     if node == "generate":
@@ -38,7 +39,7 @@ def _next_node(node: str, s: dict) -> str | None:
         return "build_final_answer" if (s.get("is_grounded") or s.get("retry_count", 0) >= 1) else "expand_query"
     if node == "expand_query":
         return "retrieve"
-    if node == "general_answer":
+    if node in ("general_answer", "tool_call", "internet_search"):
         return "build_final_answer"
     return None
 
@@ -57,6 +58,11 @@ def _summary(node: str, s: dict) -> str:
         return f"expanded query, retrying retrieval"
     if node == "general_answer":
         return "conversational reply drafted"
+    if node == "tool_call":
+        calls = s.get("tool_calls", [])
+        return f"🔧 called {calls[0]['name']}(…)" if calls else "tool call"
+    if node == "internet_search":
+        return f"🌐 web search · {len(s.get('search_results', []))} results"
     if node == "build_final_answer":
         return f"{len(s.get('sources', []))} sources attached"
     return ""
@@ -117,6 +123,8 @@ async def run_stream(query: str, context: list[dict]):
         "is_grounded": state.get("is_grounded"),
         "grounding_reason": state.get("grounding_reason", ""),
         "attempts": attempts,          # draft answer(s) BEFORE grounding + verdicts
+        "tool_calls": state.get("tool_calls", []),      # {name, args, result}
+        "search_results": state.get("search_results", []),  # {title, snippet, url}
         "final_answer": answer,
         "sources": sources,
         "timings": timings,            # ms per node (summed across retries)
