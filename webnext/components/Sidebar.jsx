@@ -1,5 +1,5 @@
 import React from "react";
-import { Plus, MessageSquare, Trash2, BookOpen, Database, Table, Layers, Sun, Moon } from "lucide-react";
+import { Plus, MessageSquare, Trash2, BookOpen, Database, Table, Layers, Sun, Moon, LogOut } from "lucide-react";
 
 function Stat({ icon: Icon, label, value }) {
   return (
@@ -13,7 +13,7 @@ function Stat({ icon: Icon, label, value }) {
   );
 }
 
-export default function Sidebar({ chats, activeId, corpus, health, onOpen, onNew, onDelete, theme, onToggleTheme }) {
+export default function Sidebar({ chats, activeId, corpus, health, onOpen, onNew, onDelete, theme, onToggleTheme, user, onLogout }) {
   return (
     <div className="w-[236px] shrink-0 glass flex flex-col p-3">
       <div className="flex items-center gap-2 px-1 pb-3">
@@ -72,6 +72,22 @@ export default function Sidebar({ chats, activeId, corpus, health, onOpen, onNew
           {theme === "dark" ? <Sun size={15} className="text-amber-300" /> : <Moon size={15} className="text-indigo-400" />}
         </button>
       </div>
+
+      {user && (
+        <div className="mt-2 glass !rounded-xl px-3 py-2 flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-[12px] font-bold text-indigo-200 shrink-0">
+            {(user.name || user.email || "?")[0].toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[12px] font-medium truncate">{user.name || user.email}</div>
+            <div className="text-[10px] text-slate-500 truncate">{user.email}</div>
+          </div>
+          <button onClick={onLogout} title="Sign out"
+            className="text-slate-400 hover:text-rose-400 transition shrink-0">
+            <LogOut size={15} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,0 +1,30 @@
+# Postgres (with pgvector) for BookRAG. Run:  docker compose up -d
+# Then set in .env:  DATABASE_URL=postgresql+psycopg2://bookrag:bookrag@localhost:5432/bookrag
+#
+# Without Docker, BookRAG falls back to a local SQLite file automatically (no setup needed).
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: bookrag-postgres
+    environment:
+      POSTGRES_USER: bookrag
+      POSTGRES_PASSWORD: bookrag
+      POSTGRES_DB: bookrag
+    ports:
+      - "5432:5432"
+    volumes:
+      - bookrag_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookrag"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: bookrag-redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  bookrag_pgdata:

@@ -1,19 +1,36 @@
 // API client. Talks DIRECTLY to the FastAPI backend (no dev proxy) so SSE streams
-// aren't buffered. Override the base with NEXT_PUBLIC_API_BASE if the backend moves.
+// aren't buffered. All calls carry the Bearer token and auto-refresh once on 401.
+
+import { authHeader, refreshToken, logout } from "./auth.js";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 
-export async function getHealth() { return (await fetch(`${API_BASE}/api/health`)).json(); }
-export async function getNodes() { return (await fetch(`${API_BASE}/api/nodes`)).json(); }
-export async function getCorpus() { return (await fetch(`${API_BASE}/api/corpus`)).json(); }
-export async function listChats() { return (await fetch(`${API_BASE}/api/chats`)).json(); }
-export async function createChat() { return (await fetch(`${API_BASE}/api/chats`, { method: "POST" })).json(); }
-export async function getChat(id) { return (await fetch(`${API_BASE}/api/chats/${id}`)).json(); }
-export async function deleteChat(id) { return fetch(`${API_BASE}/api/chats/${id}`, { method: "DELETE" }); }
+async function req(path, opts = {}, retry = true) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...opts,
+    headers: { ...(opts.headers || {}), ...authHeader() },
+  });
+  if (res.status === 401 && retry && (await refreshToken())) {
+    return req(path, opts, false);           // retry once with a fresh token
+  }
+  if (res.status === 401) {
+    logout();
+    if (typeof window !== "undefined") window.location.reload();
+  }
+  return res;
+}
+
+export async function getHealth() { return (await req("/api/health")).json(); }
+export async function getNodes() { return (await req("/api/nodes")).json(); }
+export async function getCorpus() { return (await req("/api/corpus")).json(); }
+export async function listChats() { return (await req("/api/chats")).json(); }
+export async function createChat() { return (await req("/api/chats", { method: "POST" })).json(); }
+export async function getChat(id) { return (await req(`/api/chats/${id}`)).json(); }
+export async function deleteChat(id) { return req(`/api/chats/${id}`, { method: "DELETE" }); }
 
 // Streams pipeline events. Calls onEvent(evt) for each parsed JSON event.
 export async function streamChat(chatId, message, onEvent, signal) {
-  const res = await fetch(`${API_BASE}/api/chats/${chatId}/stream`, {
+  const res = await req(`/api/chats/${chatId}/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message }),

@@ -15,12 +15,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 import config
+from auth.deps import get_current_user_id
 from server import memory, rag_service, store
 from server.nodes_meta import NODES
 
@@ -64,35 +65,36 @@ def corpus() -> dict:
     return {}
 
 
-# ------------------------------------------------------------------ chats
+# ------------------------------------------------------------------ chats (auth-protected)
 @app.get("/api/chats")
-def list_chats() -> list:
-    return store.list_chats()
+def list_chats(user_id: str = Depends(get_current_user_id)) -> list:
+    return store.list_chats(user_id)
 
 
 @app.post("/api/chats")
-def create_chat() -> dict:
-    return store.create_chat()
+def create_chat(user_id: str = Depends(get_current_user_id)) -> dict:
+    return store.create_chat(user_id)
 
 
 @app.get("/api/chats/{chat_id}")
-def get_chat(chat_id: str) -> dict:
-    chat = store.get_chat(chat_id)
+def get_chat(chat_id: str, user_id: str = Depends(get_current_user_id)) -> dict:
+    chat = store.get_chat(chat_id, user_id)
     if not chat:
         raise HTTPException(404, "chat not found")
     return {"chat": chat, "messages": store.get_messages(chat_id)}
 
 
 @app.delete("/api/chats/{chat_id}")
-def delete_chat(chat_id: str) -> dict:
-    store.delete_chat(chat_id)
+def delete_chat(chat_id: str, user_id: str = Depends(get_current_user_id)) -> dict:
+    store.delete_chat(chat_id, user_id)
     return {"ok": True}
 
 
 # ------------------------------------------------------------------ streaming chat
 @app.post("/api/chats/{chat_id}/stream")
-async def stream_chat(chat_id: str, request: Request):
-    chat = store.get_chat(chat_id)
+async def stream_chat(chat_id: str, request: Request,
+                      user_id: str = Depends(get_current_user_id)):
+    chat = store.get_chat(chat_id, user_id)
     if not chat:
         raise HTTPException(404, "chat not found")
     body = await request.json()

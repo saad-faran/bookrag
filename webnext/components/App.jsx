@@ -21,7 +21,7 @@ function CollapsedStrip({ icon: Icon, label, onExpand }) {
   );
 }
 
-export default function App() {
+export default function App({ user, onLogout }) {
   const [health, setHealth] = useState(null);
   const [nodesMeta, setNodesMeta] = useState([]);
   const [corpus, setCorpus] = useState({});
@@ -218,6 +218,7 @@ export default function App() {
         chats={chats} activeId={activeChat?.id} corpus={corpus} health={health}
         onOpen={openChat} onNew={newChat} onDelete={removeChat}
         theme={theme} onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+        user={user} onLogout={onLogout}
       />
 
       <div className="flex-1 grid gap-3 min-w-0 min-h-0" style={{ gridTemplateColumns: gridCols }}>

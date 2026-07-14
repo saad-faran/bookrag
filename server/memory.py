@@ -33,7 +33,7 @@ def build_context(chat_id: str) -> list[dict]:
     messages = store.get_messages(chat_id)
     ctx: list[dict] = []
 
-    profile = store.get_user_profile().strip()
+    profile = store.get_user_profile(chat.get("user_id", "")).strip()
     if profile:
         ctx.append({"role": "system",
                     "content": f"What you know about this user (use it to personalise, don't recite): {profile}"})
@@ -70,12 +70,16 @@ def maybe_summarize(chat_id: str) -> None:
 
 
 def maybe_update_profile(chat_id: str) -> None:
+    chat = store.get_chat(chat_id)
+    if not chat:
+        return
+    user_id = chat.get("user_id", "")
     messages = store.get_messages(chat_id)
     user_turns = [m for m in messages if m["role"] == "user"]
     if not user_turns or len(user_turns) % _PROFILE_EVERY != 0:
         return
     recent = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in messages[-8:])
-    current = store.get_user_profile().strip() or "(nothing yet)"
+    current = store.get_user_profile(user_id).strip() or "(nothing yet)"
     prompt = (
         "You maintain a concise profile of a user of a finance assistant. Given the current "
         "profile and the recent conversation, output an UPDATED profile (<=6 short bullet-style "
@@ -89,7 +93,7 @@ def maybe_update_profile(chat_id: str) -> None:
     except Exception:
         return
     if updated:
-        store.set_user_profile(updated[:1200])
+        store.set_user_profile(user_id, updated[:1200])
 
 
 def title_from(first_message: str) -> str:

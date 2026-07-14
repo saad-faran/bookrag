@@ -13,6 +13,10 @@ if [ -x ".venv/bin/python" ]; then PY=".venv/bin/python";
 elif [ -n "$PY" ] && [ -x "$PY" ]; then :;
 else PY=python3; fi
 
+echo "▶ Auth microservice on http://127.0.0.1:8001"
+"$PY" -m uvicorn auth.service:app --host 127.0.0.1 --port 8001 &
+AUTH=$!
+
 echo "▶ Starting backend on http://127.0.0.1:8000  (provider: ${GROQ_API_KEY:+groq}${GROQ_API_KEY:-ollama}, mock=${BOOKRAG_MOCK_LLM:-0})"
 "$PY" -m uvicorn server.app:app --host 127.0.0.1 --port 8000 &
 BACK=$!
@@ -21,6 +25,6 @@ echo "▶ Starting frontend on http://localhost:5200"
 ( cd webnext && npm run dev ) &
 FRONT=$!
 
-trap "echo; echo 'Stopping…'; kill $BACK $FRONT 2>/dev/null" EXIT INT TERM
+trap "echo; echo 'Stopping…'; kill $AUTH $BACK $FRONT 2>/dev/null" EXIT INT TERM
 echo "✅ Open http://localhost:5200  (Ctrl+C to stop)"
 wait

@@ -1,140 +1,113 @@
-"""SQLite persistence for chats, messages, and the cross-chat user profile.
+"""Persistence for chats, messages, and the per-user profile — via SQLAlchemy.
 
-Deliberately dependency-free (stdlib sqlite3). One small DB file next to the code.
+All chat/message access is scoped by user_id (multi-tenant). Backed by Postgres in
+production or SQLite in dev (see db/base.py).
 """
 from __future__ import annotations
 
 import json
-import sqlite3
 import time
-import uuid
-from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent / "bookrag.db"
+from sqlalchemy import func, select
 
-
-def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB_PATH, check_same_thread=False)
-    c.row_factory = sqlite3.Row
-    c.execute("PRAGMA journal_mode=WAL")
-    return c
+from db.base import init_db as _init_db, session_scope
+from db.models import Chat, Message, User
 
 
 def init_db() -> None:
-    with _conn() as c:
-        c.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS chats (
-                id TEXT PRIMARY KEY,
-                title TEXT NOT NULL DEFAULT 'New chat',
-                created_at REAL, updated_at REAL,
-                summary TEXT NOT NULL DEFAULT '',
-                unsummarized_start INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_id TEXT NOT NULL,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                sources TEXT NOT NULL DEFAULT '[]',
-                trace TEXT NOT NULL DEFAULT '{}',
-                created_at REAL
-            );
-            CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id);
-            CREATE TABLE IF NOT EXISTS user_profile (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                profile TEXT NOT NULL DEFAULT '',
-                updated_at REAL
-            );
-            INSERT OR IGNORE INTO user_profile (id, profile, updated_at) VALUES (1, '', 0);
-            """
-        )
+    _init_db()
 
 
 # ------------------------------------------------------------------ chats
-def create_chat(title: str = "New chat") -> dict:
-    cid = uuid.uuid4().hex[:12]
-    now = time.time()
-    with _conn() as c:
-        c.execute("INSERT INTO chats (id, title, created_at, updated_at) VALUES (?,?,?,?)",
-                  (cid, title, now, now))
-    return {"id": cid, "title": title, "created_at": now, "updated_at": now}
+def create_chat(user_id: str, title: str = "New chat") -> dict:
+    with session_scope() as s:
+        chat = Chat(user_id=user_id, title=title)
+        s.add(chat)
+        s.flush()
+        return {"id": chat.id, "title": chat.title,
+                "created_at": chat.created_at, "updated_at": chat.updated_at}
 
 
-def list_chats() -> list[dict]:
-    with _conn() as c:
-        rows = c.execute(
-            "SELECT id, title, created_at, updated_at, "
-            "(SELECT COUNT(*) FROM messages m WHERE m.chat_id = chats.id) AS n "
-            "FROM chats ORDER BY updated_at DESC"
-        ).fetchall()
-    return [dict(r) for r in rows]
+def list_chats(user_id: str) -> list[dict]:
+    with session_scope() as s:
+        rows = s.execute(
+            select(Chat, func.count(Message.id))
+            .outerjoin(Message, Message.chat_id == Chat.id)
+            .where(Chat.user_id == user_id)
+            .group_by(Chat.id)
+            .order_by(Chat.updated_at.desc())
+        ).all()
+    return [{"id": c.id, "title": c.title, "created_at": c.created_at,
+             "updated_at": c.updated_at, "n": n} for c, n in rows]
 
 
-def get_chat(chat_id: str) -> dict | None:
-    with _conn() as c:
-        row = c.execute("SELECT * FROM chats WHERE id = ?", (chat_id,)).fetchone()
-    return dict(row) if row else None
+def get_chat(chat_id: str, user_id: str | None = None) -> dict | None:
+    with session_scope() as s:
+        c = s.get(Chat, chat_id)
+        if not c or (user_id is not None and c.user_id != user_id):
+            return None
+        return {"id": c.id, "title": c.title, "created_at": c.created_at,
+                "updated_at": c.updated_at, "summary": c.summary,
+                "unsummarized_start": c.unsummarized_start, "user_id": c.user_id}
 
 
 def rename_chat(chat_id: str, title: str) -> None:
-    with _conn() as c:
-        c.execute("UPDATE chats SET title = ? WHERE id = ?", (title[:80], chat_id))
+    with session_scope() as s:
+        c = s.get(Chat, chat_id)
+        if c:
+            c.title = title[:200]
 
 
-def delete_chat(chat_id: str) -> None:
-    with _conn() as c:
-        c.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
-        c.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
-
-
-def touch_chat(chat_id: str) -> None:
-    with _conn() as c:
-        c.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (time.time(), chat_id))
+def delete_chat(chat_id: str, user_id: str | None = None) -> None:
+    with session_scope() as s:
+        c = s.get(Chat, chat_id)
+        if not c or (user_id is not None and c.user_id != user_id):
+            return
+        s.query(Message).filter(Message.chat_id == chat_id).delete()
+        s.delete(c)
 
 
 def update_summary(chat_id: str, summary: str, unsummarized_start: int) -> None:
-    with _conn() as c:
-        c.execute("UPDATE chats SET summary = ?, unsummarized_start = ? WHERE id = ?",
-                  (summary, unsummarized_start, chat_id))
+    with session_scope() as s:
+        c = s.get(Chat, chat_id)
+        if c:
+            c.summary = summary
+            c.unsummarized_start = unsummarized_start
 
 
 # ------------------------------------------------------------------ messages
 def add_message(chat_id: str, role: str, content: str,
                 sources: list | None = None, trace: dict | None = None) -> int:
-    with _conn() as c:
-        cur = c.execute(
-            "INSERT INTO messages (chat_id, role, content, sources, trace, created_at) "
-            "VALUES (?,?,?,?,?,?)",
-            (chat_id, role, content, json.dumps(sources or []), json.dumps(trace or {}), time.time()),
-        )
-        c.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (time.time(), chat_id))
-        return cur.lastrowid
+    with session_scope() as s:
+        m = Message(chat_id=chat_id, role=role, content=content,
+                    sources=json.dumps(sources or []), trace=json.dumps(trace or {}))
+        s.add(m)
+        c = s.get(Chat, chat_id)
+        if c:
+            c.updated_at = time.time()
+        s.flush()
+        return m.id
 
 
 def get_messages(chat_id: str) -> list[dict]:
-    with _conn() as c:
-        rows = c.execute(
-            "SELECT role, content, sources, trace, created_at FROM messages "
-            "WHERE chat_id = ? ORDER BY id", (chat_id,)
-        ).fetchall()
-    out = []
-    for r in rows:
-        d = dict(r)
-        d["sources"] = json.loads(d["sources"])
-        d["trace"] = json.loads(d["trace"])
-        out.append(d)
-    return out
+    with session_scope() as s:
+        rows = s.execute(
+            select(Message).where(Message.chat_id == chat_id).order_by(Message.id)
+        ).scalars().all()
+        return [{"role": m.role, "content": m.content,
+                 "sources": json.loads(m.sources), "trace": json.loads(m.trace),
+                 "created_at": m.created_at} for m in rows]
 
 
-# ------------------------------------------------------------------ user profile
-def get_user_profile() -> str:
-    with _conn() as c:
-        row = c.execute("SELECT profile FROM user_profile WHERE id = 1").fetchone()
-    return row["profile"] if row else ""
+# ------------------------------------------------------------------ per-user profile
+def get_user_profile(user_id: str) -> str:
+    with session_scope() as s:
+        u = s.get(User, user_id)
+        return u.profile if u else ""
 
 
-def set_user_profile(profile: str) -> None:
-    with _conn() as c:
-        c.execute("UPDATE user_profile SET profile = ?, updated_at = ? WHERE id = 1",
-                  (profile, time.time()))
+def set_user_profile(user_id: str, profile: str) -> None:
+    with session_scope() as s:
+        u = s.get(User, user_id)
+        if u:
+            u.profile = profile
