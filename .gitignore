@@ -33,3 +33,6 @@ web/
 # Old spec/presentation (excluded per team-lead)
 BookRAG_Spec.pdf
 BookRAG_Presentation.pptx
+
+# Uploaded project files
+uploads/

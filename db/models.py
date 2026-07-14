@@ -35,10 +35,35 @@ class AuthSession(Base):
     created_at: Mapped[float] = mapped_column(Float, default=time.time)
 
 
+class Project(Base):
+    __tablename__ = "projects"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(160), default="Untitled project")
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[float] = mapped_column(Float, default=time.time)
+    updated_at: Mapped[float] = mapped_column(Float, default=time.time, index=True)
+
+
+class ProjectFile(Base):
+    __tablename__ = "project_files"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    project_id: Mapped[str] = mapped_column(String(32), ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    filename: Mapped[str] = mapped_column(String(300))
+    path: Mapped[str] = mapped_column(String(600), default="")
+    kind: Mapped[str] = mapped_column(String(20), default="doc")   # doc | image | audio
+    status: Mapped[str] = mapped_column(String(20), default="processing")  # processing|ready|error
+    chunks: Mapped[int] = mapped_column(Integer, default=0)
+    bytes: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[float] = mapped_column(Float, default=time.time)
+
+
 class Chat(Base):
     __tablename__ = "chats"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
     user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[str] = mapped_column(String(32), default="")   # "" = general (base corpus)
     title: Mapped[str] = mapped_column(String(200), default="New chat")
     summary: Mapped[str] = mapped_column(Text, default="")
     unsummarized_start: Mapped[int] = mapped_column(Integer, default=0)

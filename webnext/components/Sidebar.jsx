@@ -1,5 +1,6 @@
 import React from "react";
-import { Plus, MessageSquare, Trash2, BookOpen, Database, Table, Layers, Sun, Moon, LogOut } from "lucide-react";
+import { Plus, MessageSquare, Trash2, BookOpen, Database, Table, Layers, Sun, Moon, LogOut, FolderOpen } from "lucide-react";
+import Projects from "./Projects.jsx";
 
 function Stat({ icon: Icon, label, value }) {
   return (
@@ -13,7 +14,10 @@ function Stat({ icon: Icon, label, value }) {
   );
 }
 
-export default function Sidebar({ chats, activeId, corpus, health, onOpen, onNew, onDelete, theme, onToggleTheme, user, onLogout }) {
+export default function Sidebar({ chats, activeId, corpus, health, onOpen, onNew, onDelete,
+  theme, onToggleTheme, user, onLogout, projects, activeProjectId, projectFiles, uploading,
+  onSelectProject, onCreateProject, onUploadFiles, onDeleteProject }) {
+  const activeProject = projects?.find((p) => p.id === activeProjectId);
   return (
     <div className="w-[236px] shrink-0 glass flex flex-col p-3">
       <div className="flex items-center gap-2 px-1 pb-3">
@@ -28,8 +32,12 @@ export default function Sidebar({ chats, activeId, corpus, health, onOpen, onNew
 
       <button onClick={onNew}
         className="gradient-btn text-white text-sm font-semibold rounded-xl py-2.5 flex items-center justify-center gap-2 mb-3">
-        <Plus size={16} /> New chat
+        <Plus size={16} /> New chat{activeProject ? ` · ${activeProject.name}` : ""}
       </button>
+
+      <Projects projects={projects || []} activeId={activeProjectId} files={projectFiles}
+        uploading={uploading} onSelect={onSelectProject} onCreate={onCreateProject}
+        onUpload={onUploadFiles} onDeleteProject={onDeleteProject} />
 
       <div className="text-[11px] uppercase tracking-wide text-slate-500 px-1 mb-1">Chats</div>
       <div className="flex-1 overflow-y-auto space-y-1 pr-1">

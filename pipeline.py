@@ -41,6 +41,7 @@ class RAGState(TypedDict, total=False):
     chat_context: list
     tool_calls: list
     search_results: list
+    project_id: str
 
 
 DISCLAIMER = (
@@ -101,11 +102,36 @@ def build_graph():
             "retry_count": 0,
         }
 
+    def _retrieve_all(query: str, extra_docs=None, project_id: str = "") -> list:
+        """Base-corpus retrieval, plus the chat's project documents (prioritised)."""
+        base = retriever.retrieve(query, extra_docs=extra_docs)
+        if not project_id:
+            return base
+        try:
+            from server.project_store import retrieve as proj_ret
+            proj = proj_ret(project_id, query, n=6)
+        except Exception:
+            proj = []
+        if not proj:
+            return base
+        seen, merged = set(), []
+        for d in proj + base:                     # the user's uploaded docs come first
+            k = d["text"][:80]
+            if k in seen:
+                continue
+            seen.add(k)
+            merged.append(d)
+            if len(merged) >= config.N_FINAL:
+                break
+        return merged
+
     def retrieve(state: RAGState) -> RAGState:
+        pid = state.get("project_id", "")
         if state.get("retry_count", 0) == 0:
-            docs = retriever.retrieve(state["rewritten_query"])
+            docs = _retrieve_all(state["rewritten_query"], project_id=pid)
             return {"retrieved_docs": docs, "first_attempt_docs": docs}
-        docs = retriever.retrieve(state["expanded_query"], extra_docs=state.get("first_attempt_docs"))
+        docs = _retrieve_all(state["expanded_query"],
+                             extra_docs=state.get("first_attempt_docs"), project_id=pid)
         return {"retrieved_docs": docs}
 
     def generate(state: RAGState) -> RAGState:
@@ -247,7 +273,8 @@ def build_graph():
             sources = [
                 {"title": d.get("title", ""), "source": d.get("source", ""),
                  "page": d.get("page", ""), "element_type": d.get("element_type", "text"),
-                 "rrf_score": d.get("rrf_score", 0)}
+                 "rrf_score": d.get("rrf_score", 0),
+                 "doc_id": d.get("doc_id", ""), "project_id": d.get("project_id", "")}
                 for d in state.get("retrieved_docs", [])
             ]
             grounded = state.get("is_grounded", False)

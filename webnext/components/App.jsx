@@ -29,6 +29,12 @@ export default function App({ user, onLogout }) {
   const [activeChat, setActiveChat] = useState(null);
   const [messages, setMessages] = useState([]);
 
+  // projects
+  const [projects, setProjects] = useState([]);
+  const [activeProjectId, setActiveProjectId] = useState(null);
+  const [projectFiles, setProjectFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+
   // theme + layout
   const [theme, setTheme] = useState("dark");
   const [maxed, setMaxed] = useState(null);               // null | 'pipeline' | 'chat' | 'trace'
@@ -75,6 +81,7 @@ export default function App({ user, onLogout }) {
     }
     loadMeta();
     refreshChats();
+    refreshProjects();
     return () => { cancelled = true; };
   }, []);
 
@@ -83,6 +90,50 @@ export default function App({ user, onLogout }) {
     setChats(c);
     return c;
   }, []);
+
+  const refreshProjects = useCallback(async () => {
+    const p = await api.listProjects().catch(() => []);
+    setProjects(p);
+    return p;
+  }, []);
+
+  const loadProjectFiles = useCallback(async (pid) => {
+    if (!pid) { setProjectFiles([]); return; }
+    const { files } = await api.getProject(pid).catch(() => ({ files: [] }));
+    setProjectFiles(files || []);
+  }, []);
+
+  const selectProject = useCallback((pid) => {
+    setActiveProjectId(pid);
+    loadProjectFiles(pid);
+  }, [loadProjectFiles]);
+
+  const createProject = useCallback(async (name) => {
+    const p = await api.createProject(name);
+    await refreshProjects();
+    setActiveProjectId(p.id);
+    setProjectFiles([]);
+  }, [refreshProjects]);
+
+  const deleteProjectById = useCallback(async (pid) => {
+    await api.deleteProject(pid);
+    await refreshProjects();
+    if (activeProjectId === pid) { setActiveProjectId(null); setProjectFiles([]); }
+  }, [refreshProjects, activeProjectId]);
+
+  const uploadFiles = useCallback(async (files) => {
+    if (!activeProjectId || !files.length) return;
+    setUploading(true);
+    try {
+      for (const f of files) {
+        await api.uploadFile(activeProjectId, f).catch(() => {});
+      }
+      await loadProjectFiles(activeProjectId);
+      await refreshProjects();
+    } finally {
+      setUploading(false);
+    }
+  }, [activeProjectId, loadProjectFiles, refreshProjects]);
 
   useEffect(() => {
     if (!streaming) return;
@@ -98,12 +149,12 @@ export default function App({ user, onLogout }) {
   }, []);
 
   const newChat = useCallback(async () => {
-    const c = await api.createChat();
+    const c = await api.createChat(activeProjectId || "");
     await refreshChats();
     setActiveChat(c);
     setMessages([]);
     resetRun();
-  }, [refreshChats]);
+  }, [refreshChats, activeProjectId]);
 
   const removeChat = useCallback(async (id) => {
     await api.deleteChat(id);
@@ -122,7 +173,7 @@ export default function App({ user, onLogout }) {
   const send = useCallback(async (text) => {
     if (!text.trim() || streaming) return;
     let chat = activeChat;
-    if (!chat) { chat = await api.createChat(); setActiveChat(chat); }
+    if (!chat) { chat = await api.createChat(activeProjectId || ""); setActiveChat(chat); }
     setMessages((m) => [...m, { role: "user", content: text }]);
     resetRun();
     setStreaming(true);
@@ -177,7 +228,7 @@ export default function App({ user, onLogout }) {
     setMessages((m) => [...m, { role: "assistant", content: answer, sources: pendingSources,
                                 trace: pendingTrace, record: pendingRecord }]);
     refreshChats();
-  }, [activeChat, streaming, refreshChats]);
+  }, [activeChat, streaming, refreshChats, activeProjectId]);
 
   // ---- layout helpers ----
   const toggleMax = (panel) => setMaxed((m) => (m === panel ? null : panel));
@@ -219,6 +270,9 @@ export default function App({ user, onLogout }) {
         onOpen={openChat} onNew={newChat} onDelete={removeChat}
         theme={theme} onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
         user={user} onLogout={onLogout}
+        projects={projects} activeProjectId={activeProjectId} projectFiles={projectFiles}
+        uploading={uploading} onSelectProject={selectProject} onCreateProject={createProject}
+        onUploadFiles={uploadFiles} onDeleteProject={deleteProjectById}
       />
 
       <div className="flex-1 grid gap-3 min-w-0 min-h-0" style={{ gridTemplateColumns: gridCols }}>

@@ -2,6 +2,7 @@
 fastapi>=0.110
 uvicorn[standard]>=0.29
 sse-starlette>=2.0
+python-multipart>=0.0.9
 
 # --- auth + database (SQLAlchemy: Postgres in prod, SQLite in dev) ---
 SQLAlchemy>=2.0

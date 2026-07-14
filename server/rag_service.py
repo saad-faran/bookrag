@@ -68,7 +68,7 @@ def _summary(node: str, s: dict) -> str:
     return ""
 
 
-async def run_stream(query: str, context: list[dict]):
+async def run_stream(query: str, context: list[dict], project_id: str = ""):
     graph = get_graph()
     state: dict = {}
     t_start = t_prev = time.perf_counter()
@@ -78,7 +78,8 @@ async def run_stream(query: str, context: list[dict]):
     yield {"type": "node_start", "node": "rewrite_and_route"}
     try:
         async for update in graph.astream(
-            {"raw_query": query, "chat_context": context}, stream_mode="updates"
+            {"raw_query": query, "chat_context": context, "project_id": project_id},
+            stream_mode="updates",
         ):
             for node, delta in update.items():
                 if not isinstance(delta, dict):
