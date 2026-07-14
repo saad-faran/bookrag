@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import { motion } from "framer-motion";
 import { BookOpen, ShieldCheck, ShieldAlert } from "lucide-react";
 import Sources from "./Sources.jsx";
+import RunInspector from "./RunInspector.jsx";
 
 export default function Message({ msg, live }) {
   const isUser = msg.role === "user";
@@ -42,6 +43,7 @@ export default function Message({ msg, live }) {
         )}
 
         {!live && <Sources sources={msg.sources} />}
+        {!live && <RunInspector record={msg.record || msg.trace} />}
       </div>
     </motion.div>
   );

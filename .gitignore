@@ -29,3 +29,7 @@ web/
 # Tooling / OS
 .claude/
 .DS_Store
+
+# Old spec/presentation (excluded per team-lead)
+BookRAG_Spec.pdf
+BookRAG_Presentation.pptx

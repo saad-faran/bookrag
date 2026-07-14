@@ -27,7 +27,9 @@ COLLECTION_NAME = "bookrag"
 # ------------------------------------------------------------------ parsing
 MIN_CHARS_PER_PAGE = 40      # below this, a PDF page is treated as scanned -> OCR fallback
 MIN_TABLE_CELLS = 6          # HTML/PDF tables smaller than this are treated as layout noise
-ENABLE_OCR = os.getenv("BOOKRAG_OCR", "auto")  # "auto" | "on" | "off"
+ENABLE_OCR = os.getenv("BOOKRAG_OCR", "auto")      # "auto" | "on" | "off" — image/scan OCR
+ENABLE_AUDIO = os.getenv("BOOKRAG_AUDIO", "auto")  # "auto" | "off" — audio transcription
+WHISPER_MODEL = os.getenv("BOOKRAG_WHISPER_MODEL", "base")  # faster-whisper / whisper size
 
 # ------------------------------------------------------------------ chunking
 CHUNK_SIZE = 800

@@ -24,6 +24,12 @@ beautifulsoup4>=4.12   # HTML (SEC filings) parsing
 lxml>=5.0              # fast HTML/table parser used by pandas.read_html
 pandas>=2.0
 
-# --- optional OCR for scanned PDFs (auto-detected; install ONE if you add scans) ---
-# pytesseract>=0.3.10  # also: brew install tesseract
-# rapidocr-onnxruntime>=1.3  # pip-only, no system deps
+# --- optional: multimodal file upload (images / audio / docx), auto-detected ---
+# Images (OCR) — install ONE:
+# pytesseract>=0.3.10          # also: brew install tesseract
+# rapidocr-onnxruntime>=1.3    # pip-only, no system deps
+# Audio (transcription):
+# faster-whisper>=1.0          # CPU int8, fast; or: openai-whisper
+# Documents:
+# python-docx>=1.1             # .docx text extraction
+# pillow>=10.0                 # image handling (usually already present via torch)

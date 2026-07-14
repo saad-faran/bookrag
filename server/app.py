@@ -110,8 +110,10 @@ async def stream_chat(chat_id: str, request: Request):
     async def event_gen():
         async for ev in rag_service.run_stream(message, context):
             if ev["type"] == "done":
+                # persist the full run record (superset of trace) so the inspector
+                # works after a reload too
                 store.add_message(chat_id, "assistant", ev["answer"],
-                                  ev.get("sources"), ev.get("trace"))
+                                  ev.get("sources"), ev.get("record") or ev.get("trace"))
             yield {"data": json.dumps(ev)}
         # Post-response snapshotting (best-effort; adds no perceived latency).
         try:

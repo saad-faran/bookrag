@@ -65,7 +65,9 @@ def _summary(node: str, s: dict) -> str:
 async def run_stream(query: str, context: list[dict]):
     graph = get_graph()
     state: dict = {}
-    t_prev = time.perf_counter()
+    t_start = t_prev = time.perf_counter()
+    timings: dict[str, int] = {}
+    attempts: list[dict] = []   # each generation draft + its grounding verdict (before final)
 
     yield {"type": "node_start", "node": "rewrite_and_route"}
     try:
@@ -79,6 +81,19 @@ async def run_stream(query: str, context: list[dict]):
                 dur_ms = int((now - t_prev) * 1000)
                 t_prev = now
                 state.update(delta)
+                timings[node] = timings.get(node, 0) + dur_ms
+
+                # capture the query-evolution + pre-grounding drafts for the run record
+                if node == "generate":
+                    attempts.append({"draft": state.get("generated_answer", ""),
+                                     "is_grounded": None, "reason": ""})
+                elif node == "general_answer":
+                    attempts.append({"draft": state.get("generated_answer", ""),
+                                     "is_grounded": True, "reason": "conversational — no grounding needed"})
+                elif node == "evaluate_grounding" and attempts:
+                    attempts[-1]["is_grounded"] = bool(state.get("is_grounded"))
+                    attempts[-1]["reason"] = state.get("grounding_reason", "")
+
                 yield {"type": "node_end", "node": node,
                        "dur_ms": dur_ms, "summary": _summary(node, state)}
                 nxt = _next_node(node, state)
@@ -88,18 +103,35 @@ async def run_stream(query: str, context: list[dict]):
         yield {"type": "error", "message": f"{type(e).__name__}: {e}"}
         return
 
+    total_ms = int((time.perf_counter() - t_start) * 1000)
     answer = state.get("final_answer") or state.get("generated_answer") or "_No answer produced._"
     sources = state.get("sources", [])
-    trace = {
-        "route": state.get("route", "rag"),
+
+    # Full, inspectable run record — every step that matters, surfaced to the user.
+    record = {
+        "raw_query": query,
         "rewritten_query": state.get("rewritten_query", ""),
+        "expanded_query": state.get("expanded_query", ""),
+        "route": state.get("route", "rag"),
         "retry_count": state.get("retry_count", 0),
         "is_grounded": state.get("is_grounded"),
         "grounding_reason": state.get("grounding_reason", ""),
+        "attempts": attempts,          # draft answer(s) BEFORE grounding + verdicts
+        "final_answer": answer,
+        "sources": sources,
+        "timings": timings,            # ms per node (summed across retries)
+        "total_ms": total_ms,
+        "model": _model_label(),
+    }
+    trace = {  # compact subset kept for the grounding badge
+        "route": record["route"], "rewritten_query": record["rewritten_query"],
+        "retry_count": record["retry_count"], "is_grounded": record["is_grounded"],
+        "grounding_reason": record["grounding_reason"],
     }
 
     yield {"type": "sources", "sources": sources}
     yield {"type": "trace", "trace": trace}
+    yield {"type": "record", "record": record}
 
     # Stream the answer for a live typing effect (fast).
     tokens = re.findall(r"\S+\s*", answer)
@@ -114,4 +146,9 @@ async def run_stream(query: str, context: list[dict]):
     if buf:
         yield {"type": "token", "text": buf}
 
-    yield {"type": "done", "answer": answer, "sources": sources, "trace": trace}
+    yield {"type": "done", "answer": answer, "sources": sources, "trace": trace, "record": record}
+
+
+def _model_label() -> str:
+    import config
+    return f"{config.PROVIDER}:{config.MODEL_HEAVY}" if not config.MOCK_LLM else "mock"

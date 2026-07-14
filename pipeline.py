@@ -60,8 +60,9 @@ def _format_docs(docs: list[dict]) -> str:
 def build_graph():
     """Compile and return the LangGraph app. LLM clients are created once here."""
     router = make_llm(config.MODEL_ROUTER, temperature=0.0)
-    general_llm = make_llm(config.MODEL_GENERAL, temperature=0.4)
-    heavy = make_llm(config.MODEL_HEAVY, temperature=0.1)
+    general_llm = make_llm(config.MODEL_GENERAL, temperature=0.5)
+    gen = make_llm(config.MODEL_HEAVY, temperature=0.35)   # natural, human generation
+    heavy = make_llm(config.MODEL_HEAVY, temperature=0.1)  # strict, deterministic evaluation
     retriever = get_retriever()
 
     # ---------------------------------------------------------------- nodes
@@ -99,20 +100,31 @@ def build_graph():
     def generate(state: RAGState) -> RAGState:
         docs = state["retrieved_docs"]
         system = (
-            "You are a knowledgeable assistant specialising in finance, business, and "
-            "wealth-building. Answer using ONLY the provided excerpts below. Some excerpts "
-            "are TABLES (Markdown) — read them carefully for figures. If the excerpts do not "
-            "contain enough information, say so honestly rather than guessing. Be thorough and "
-            "cite the source document name when referencing specific advice or data."
+            "You are BookRAG — a sharp, personable finance & business analyst. Answer the user's "
+            "question grounded ONLY in the provided source excerpts (some are Markdown TABLES — read "
+            "the figures carefully). Sound like a knowledgeable person talking to a colleague, not like "
+            "a report or a Wikipedia entry.\n\n"
+            "STYLE — this matters a lot:\n"
+            "• Match length and depth to the question. A simple/factual question gets a crisp 1–3 "
+            "sentence answer; a broad one gets more. Never pad or over-explain.\n"
+            "• Default to natural flowing prose. Use bullet points ONLY when genuinely enumerating 3+ "
+            "parallel items — never as your default format.\n"
+            "• Weave sources in naturally (e.g. \"NVIDIA's 10-K flags…\") instead of stiff citations "
+            "after every sentence.\n"
+            "• Build on the conversation so far — refer back to what was already discussed, and adapt to "
+            "the user's apparent level and interests. Be direct, warm, and human.\n"
+            "• If the excerpts genuinely don't cover the question, say so briefly in one line and suggest "
+            "what would help — do not guess or invent."
         )
         user = (
-            f"Question: {state['rewritten_query']}\n\nDocument excerpts:\n{_format_docs(docs)}\n\n"
-            "Answer based strictly on the excerpts above:"
+            f"User's question: {state['raw_query']}\n\n"
+            f"Source excerpts to ground your answer:\n{_format_docs(docs)}\n\n"
+            "Now answer the user naturally, grounded strictly in these excerpts."
         )
         messages = [{"role": "system", "content": system}]
         messages.extend(state.get("chat_context", []))
         messages.append({"role": "user", "content": user})
-        return {"generated_answer": invoke_text(heavy, messages)}
+        return {"generated_answer": invoke_text(gen, messages)}
 
     def evaluate_grounding(state: RAGState) -> RAGState:
         system = (
@@ -153,9 +165,12 @@ def build_graph():
 
     def general_answer(state: RAGState) -> RAGState:
         system = (
-            "You are a helpful, friendly assistant for a finance/business knowledge base. "
-            "Answer conversationally and concisely. You may answer general finance questions "
-            "if the user is curious."
+            "You are BookRAG — a warm, natural conversational assistant with a finance & business focus. "
+            "Reply the way a thoughtful person would in a chat: concise, friendly, and adapted to the "
+            "conversation so far. Match your length to the message — a greeting gets a short greeting "
+            "back, not a paragraph. Avoid bullet-point dumps; prefer natural sentences. If the user "
+            "drifts well outside finance/business/wealth, help them in a sentence or two, then gently "
+            "mention you're at your best on finance, markets, companies and wealth topics."
         )
         messages = [{"role": "system", "content": system}]
         messages.extend(state.get("chat_context", []))

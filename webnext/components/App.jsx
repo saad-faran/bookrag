@@ -130,6 +130,7 @@ export default function App() {
 
     let pendingSources = [];
     let pendingTrace = {};
+    let pendingRecord = null;
     let answer = "";
 
     try {
@@ -154,6 +155,8 @@ export default function App() {
           pendingSources = ev.sources || [];
         } else if (ev.type === "trace") {
           pendingTrace = ev.trace || {};
+        } else if (ev.type === "record") {
+          pendingRecord = ev.record || null;
         } else if (ev.type === "token") {
           answer += ev.text;
           setLiveAnswer(answer);
@@ -171,7 +174,8 @@ export default function App() {
     setActiveNode(null);
     setStreaming(false);
     setLiveAnswer("");
-    setMessages((m) => [...m, { role: "assistant", content: answer, sources: pendingSources, trace: pendingTrace }]);
+    setMessages((m) => [...m, { role: "assistant", content: answer, sources: pendingSources,
+                                trace: pendingTrace, record: pendingRecord }]);
     refreshChats();
   }, [activeChat, streaming, refreshChats]);
 

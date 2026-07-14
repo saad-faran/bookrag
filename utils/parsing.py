@@ -212,6 +212,95 @@ def parse_html(path: Path) -> list[Element]:
     return elements
 
 
+# ------------------------------------------------------------------- images (OCR)
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
+
+
+def parse_image(path: Path) -> list[Element]:
+    """OCR an uploaded image into searchable text. Graceful if no OCR engine."""
+    ocr = _ocr_engine()
+    if ocr is None:
+        return [Element(
+            text=f"[Image: {path.name}] — no OCR engine installed; install pytesseract "
+                 "(brew install tesseract) or rapidocr-onnxruntime to extract text.",
+            element_type="image", extra={"filename": path.name})]
+    try:
+        text = ocr(path.read_bytes()).strip()
+    except Exception as e:  # noqa: BLE001
+        text = ""
+        print(f"    ! OCR failed for {path.name}: {e}")
+    if not text:
+        text = f"[Image: {path.name}] — no text detected."
+    return [Element(text=text, element_type="image", extra={"filename": path.name})]
+
+
+# ------------------------------------------------------------------- audio (transcription)
+AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".webm", ".mp4"}
+
+
+@lru_cache(maxsize=1)
+def _transcriber():
+    """Return a callable(path)->str transcript, or None if no engine is installed.
+
+    Tries faster-whisper (fast, CPU int8) then openai-whisper. Controlled by
+    config.ENABLE_AUDIO ("auto"|"off").
+    """
+    if getattr(config, "ENABLE_AUDIO", "auto") == "off":
+        return None
+    model_size = getattr(config, "WHISPER_MODEL", "base")
+    try:
+        from faster_whisper import WhisperModel
+        model = WhisperModel(model_size, device="cpu", compute_type="int8")
+
+        def run(path) -> str:
+            segments, _ = model.transcribe(str(path))
+            return " ".join(seg.text for seg in segments)
+
+        return run
+    except Exception:
+        pass
+    try:
+        import whisper
+        model = whisper.load_model(model_size)
+
+        def run(path) -> str:  # type: ignore[misc]
+            return model.transcribe(str(path)).get("text", "")
+
+        return run
+    except Exception:
+        return None
+
+
+def parse_audio(path: Path) -> list[Element]:
+    """Transcribe an uploaded audio/video file into searchable text. Graceful if no engine."""
+    tr = _transcriber()
+    if tr is None:
+        return [Element(
+            text=f"[Audio: {path.name}] — no transcription engine installed; "
+                 "install faster-whisper to transcribe.",
+            element_type="audio", extra={"filename": path.name})]
+    try:
+        text = tr(path).strip()
+    except Exception as e:  # noqa: BLE001
+        text = ""
+        print(f"    ! transcription failed for {path.name}: {e}")
+    if not text:
+        text = f"[Audio: {path.name}] — no speech detected."
+    return [Element(text=text, element_type="audio", extra={"filename": path.name})]
+
+
+# ------------------------------------------------------------------- docx
+def parse_docx(path: Path) -> list[Element]:
+    try:
+        import docx  # python-docx
+    except Exception:
+        return [Element(text=f"[Document: {path.name}] — install python-docx to extract text.",
+                        element_type="text", extra={"filename": path.name})]
+    d = docx.Document(str(path))
+    text = "\n".join(p.text for p in d.paragraphs if p.text.strip())
+    return [Element(text=text, element_type="text")] if text else []
+
+
 # ------------------------------------------------------------------- dispatcher
 def parse_document(path: Path) -> list[Element]:
     ext = path.suffix.lower()
@@ -219,12 +308,22 @@ def parse_document(path: Path) -> list[Element]:
         return parse_pdf(path)
     if ext in (".htm", ".html"):
         return parse_html(path)
-    if ext in (".txt", ".md"):
+    if ext in (".txt", ".md", ".csv"):
         text = path.read_text(encoding="utf-8", errors="ignore").strip()
         return [Element(text=text, element_type="text")] if text else []
+    if ext == ".docx":
+        return parse_docx(path)
+    if ext in IMAGE_EXTS:
+        return parse_image(path)
+    if ext in AUDIO_EXTS:
+        return parse_audio(path)
     print(f"    ? unsupported type {ext} ({path.name}) -- skipped")
     return []
 
 
 def ocr_available() -> bool:
     return _ocr_engine() is not None
+
+
+def audio_available() -> bool:
+    return _transcriber() is not None
