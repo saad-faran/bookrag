@@ -5,6 +5,7 @@ import Sidebar from "./Sidebar.jsx";
 import ChatPanel from "./ChatPanel.jsx";
 import PipelinePanel from "./PipelinePanel.jsx";
 import TracePanel from "./TracePanel.jsx";
+import Analytics from "./Analytics.jsx";
 import * as api from "../lib/api.js";
 
 function CollapsedStrip({ icon: Icon, label, onExpand }) {
@@ -36,6 +37,7 @@ export default function App({ user, onLogout }) {
   const [uploading, setUploading] = useState(false);
 
   // theme + layout
+  const [showAnalytics, setShowAnalytics] = useState(false);
   const [theme, setTheme] = useState("dark");
   const [maxed, setMaxed] = useState(null);               // null | 'pipeline' | 'chat' | 'trace'
   const [minimized, setMinimized] = useState({ pipeline: false, trace: false });
@@ -273,8 +275,14 @@ export default function App({ user, onLogout }) {
         projects={projects} activeProjectId={activeProjectId} projectFiles={projectFiles}
         uploading={uploading} onSelectProject={selectProject} onCreateProject={createProject}
         onUploadFiles={uploadFiles} onDeleteProject={deleteProjectById}
+        showAnalytics={showAnalytics} onToggleAnalytics={() => setShowAnalytics((v) => !v)}
       />
 
+      {showAnalytics ? (
+        <div className="flex-1 min-w-0 min-h-0 grid grid-cols-1">
+          <Analytics onClose={() => setShowAnalytics(false)} />
+        </div>
+      ) : (
       <div className="flex-1 grid gap-3 min-w-0 min-h-0" style={{ gridTemplateColumns: gridCols }}>
         {showPipeline && pipelineEl}
         {showChat && (
@@ -286,6 +294,7 @@ export default function App({ user, onLogout }) {
         )}
         {showTrace && traceEl}
       </div>
+      )}
     </div>
   );
 }

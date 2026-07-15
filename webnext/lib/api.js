@@ -33,6 +33,11 @@ export async function createChat(projectId = "") {
 export async function getChat(id) { return (await req(`/api/chats/${id}`)).json(); }
 export async function deleteChat(id) { return req(`/api/chats/${id}`, { method: "DELETE" }); }
 
+// ---- observability ----
+export async function getAnalytics() { return (await req("/api/analytics")).json(); }
+export async function getLogs(limit = 100) { return (await req(`/api/logs?limit=${limit}`)).json(); }
+export async function getMcp() { return (await req("/api/mcp")).json(); }
+
 // ---- projects ----
 export async function listProjects() { return (await req("/api/projects")).json(); }
 export async function createProject(name, description = "") {

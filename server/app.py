@@ -26,7 +26,7 @@ from sse_starlette.sse import EventSourceResponse
 
 import config
 from auth.deps import get_current_user_id
-from server import memory, project_store, rag_service, store
+from server import events, memory, project_store, rag_service, store
 from server.nodes_meta import NODES
 from utils.parsing import AUDIO_EXTS, IMAGE_EXTS
 
@@ -76,6 +76,19 @@ def corpus() -> dict:
     if config.INGEST_STATE.exists():
         return json.loads(config.INGEST_STATE.read_text())
     return {}
+
+
+@app.get("/api/analytics")
+def analytics(user_id: str = Depends(get_current_user_id)) -> dict:
+    """Aggregated observability stats built from the event_logs table."""
+    return events.analytics()
+
+
+@app.get("/api/logs")
+def logs(limit: int = 100, step: str | None = None, level: str | None = None,
+         user_id: str = Depends(get_current_user_id)) -> list:
+    """Recent structured events (every major pipeline step is logged)."""
+    return events.recent(limit=limit, step=step, level=level)
 
 
 @app.get("/api/mcp")
@@ -211,9 +224,33 @@ async def stream_chat(chat_id: str, request: Request,
     context = memory.build_context(chat_id)
     project_id = chat.get("project_id", "") or ""
 
+    cid = events.new_correlation_id()
+    events.log_event("request", correlation_id=cid, user_id=user_id, chat_id=chat_id,
+                     payload={"message": message[:200], "project_id": project_id})
+
     async def event_gen():
         async for ev in rag_service.run_stream(message, context, project_id=project_id):
-            if ev["type"] == "done":
+            # --- structured DB logging of every major step ---
+            if ev["type"] == "node_end":
+                events.log_event(ev["node"], correlation_id=cid, user_id=user_id,
+                                 chat_id=chat_id, latency_ms=ev.get("dur_ms", 0),
+                                 payload={"summary": ev.get("summary", "")})
+            elif ev["type"] == "error":
+                events.log_event("error", correlation_id=cid, user_id=user_id,
+                                 chat_id=chat_id, level="error",
+                                 payload={"message": ev.get("message", "")})
+            elif ev["type"] == "done":
+                rec = ev.get("record") or {}
+                tc = (rec.get("tool_calls") or [{}])[0]
+                events.log_event("done", correlation_id=cid, user_id=user_id, chat_id=chat_id,
+                                 latency_ms=rec.get("total_ms", 0),
+                                 payload={"route": rec.get("route"),
+                                          "is_grounded": rec.get("is_grounded"),
+                                          "retry_count": rec.get("retry_count", 0),
+                                          "tool": tc.get("name"), "via": tc.get("via"),
+                                          "n_sources": len(rec.get("sources") or []),
+                                          "n_web": len(rec.get("search_results") or []),
+                                          "model": rec.get("model")})
                 # persist the full run record (superset of trace) so the inspector
                 # works after a reload too
                 store.add_message(chat_id, "assistant", ev["answer"],

@@ -1,5 +1,5 @@
 import React from "react";
-import { Plus, MessageSquare, Trash2, BookOpen, Database, Table, Layers, Sun, Moon, LogOut, FolderOpen } from "lucide-react";
+import { Plus, MessageSquare, Trash2, BookOpen, Database, Table, Layers, Sun, Moon, LogOut, FolderOpen, BarChart3 } from "lucide-react";
 import Projects from "./Projects.jsx";
 
 function Stat({ icon: Icon, label, value }) {
@@ -16,7 +16,8 @@ function Stat({ icon: Icon, label, value }) {
 
 export default function Sidebar({ chats, activeId, corpus, health, onOpen, onNew, onDelete,
   theme, onToggleTheme, user, onLogout, projects, activeProjectId, projectFiles, uploading,
-  onSelectProject, onCreateProject, onUploadFiles, onDeleteProject }) {
+  onSelectProject, onCreateProject, onUploadFiles, onDeleteProject,
+  showAnalytics, onToggleAnalytics }) {
   const activeProject = projects?.find((p) => p.id === activeProjectId);
   return (
     <div className="w-[236px] shrink-0 glass flex flex-col p-3">
@@ -59,6 +60,13 @@ export default function Sidebar({ chats, activeId, corpus, health, onOpen, onNew
           </div>
         ))}
       </div>
+
+      <button onClick={onToggleAnalytics}
+        className={`mt-2 w-full flex items-center justify-center gap-2 text-[12px] rounded-xl py-2 border transition
+          ${showAnalytics ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-200"
+                          : "border-[var(--border)] text-slate-300 hover:border-cyan-500/40 hover:bg-cyan-500/10"}`}>
+        <BarChart3 size={14} /> {showAnalytics ? "Back to chat" : "Observability"}
+      </button>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
         <Stat icon={Database} label="Docs" value={corpus?.documents} />

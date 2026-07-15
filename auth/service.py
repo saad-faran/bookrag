@@ -22,6 +22,7 @@ from auth.security import (
 )
 from db.base import init_db, session_scope
 from db.models import AuthSession, User
+from server.events import log_event
 
 app = FastAPI(title="BookRAG Auth Service")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -78,6 +79,7 @@ def register(body: RegisterIn, user_agent: str = Header(default="")):
         s.add(user)
         s.flush()
         s.expunge(user)
+    log_event("auth.register", user_id=user.id, payload={"email": email})
     return _issue(user, user_agent)
 
 
@@ -87,8 +89,10 @@ def login(body: LoginIn, user_agent: str = Header(default="")):
     with session_scope() as s:
         user = s.query(User).filter(User.email == email).first()
         if not user or not verify_password(body.password, user.password_hash):
+            log_event("auth.login_failed", level="warn", payload={"email": email})
             raise HTTPException(401, "invalid email or password")
         s.expunge(user)
+    log_event("auth.login", user_id=user.id, payload={"email": email})
     return _issue(user, user_agent)
 
 
