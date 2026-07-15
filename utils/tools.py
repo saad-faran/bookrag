@@ -12,15 +12,26 @@ from __future__ import annotations
 import ast
 import datetime
 import operator
+import re
 
 import requests
 
 _TIMEOUT = 12
-_UA = {"User-Agent": "Mozilla/5.0 (BookRAG)"}
+_UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
 
 
 def _get(url: str, **kw):
     return requests.get(url, timeout=_TIMEOUT, headers=_UA, **kw)
+
+
+# ---------------------------------------------------------------- currency map
+_CURRENCY_MAP = {
+    "DOLLAR": "USD", "DOLLARS": "USD", "USD": "USD", "$": "USD", "US DOLLAR": "USD", "US DOLLARS": "USD",
+    "EURO": "EUR", "EUROS": "EUR", "EUR": "EUR", "€": "EUR",
+    "POUND": "GBP", "POUNDS": "GBP", "GBP": "GBP", "£": "GBP", "STERLING": "GBP",
+    "YEN": "JPY", "JPY": "JPY", "¥": "JPY",
+    "CAD": "CAD", "AUD": "AUD", "CHF": "CHF", "CNY": "CNY", "INR": "INR", "RUPEE": "INR", "RUPEES": "INR", "₹": "INR",
+}
 
 
 # ---------------------------------------------------------------- calculator (safe)
@@ -43,7 +54,16 @@ def _safe_eval(node):
 
 def calculator(expression: str) -> dict:
     """Evaluate a numeric expression safely (no names/calls)."""
-    result = _safe_eval(ast.parse(str(expression), mode="eval").body)
+    # Preprocess expression to handle common human-written math notations
+    expr = str(expression).replace("^", "**")
+    expr = re.sub(r"\b[xX]\b", "*", expr)
+    # Remove commas in numbers (e.g. 100,000 -> 100000)
+    expr = re.sub(r"(?<=\d),(?=\d)", "", expr)
+    # Convert N% of X -> N * 0.01 * X
+    expr = re.sub(r"(\d+(?:\.\d+)?)\s*%\s*of\s*", r"(\1 * 0.01) * ", expr)
+    expr = re.sub(r"(\d+(?:\.\d+)?)\s*%", r"(\1 * 0.01)", expr)
+    
+    result = _safe_eval(ast.parse(expr, mode="eval").body)
     if isinstance(result, float) and result == int(result):
         formatted = f"{int(result):,}"
     elif isinstance(result, (int, float)):
@@ -55,8 +75,12 @@ def calculator(expression: str) -> dict:
 
 # ---------------------------------------------------------------- weather (Open-Meteo)
 def get_weather(location: str) -> dict:
+    # Strip common filler/descriptive words that confuse geocoding APIs
+    loc_clean = re.sub(r"\b(today|tomorrow|now|weather|in|at|the|current|forecast)\b", "", location, flags=re.IGNORECASE).strip()
+    if not loc_clean:
+        loc_clean = location
     g = _get("https://geocoding-api.open-meteo.com/v1/search",
-             params={"name": location, "count": 1}).json()
+             params={"name": loc_clean, "count": 1}).json()
     if not g.get("results"):
         return {"error": f"location '{location}' not found"}
     r = g["results"][0]
@@ -74,7 +98,24 @@ def get_weather(location: str) -> dict:
 
 # ---------------------------------------------------------------- currency (Frankfurter)
 def convert_currency(amount: float, from_currency: str, to_currency: str) -> dict:
-    fr, to = from_currency.upper(), to_currency.upper()
+    from_curr = str(from_currency).strip().upper()
+    to_curr = str(to_currency).strip().upper()
+    
+    # Try direct mapping
+    fr_code = _CURRENCY_MAP.get(from_curr, from_curr)
+    to_code = _CURRENCY_MAP.get(to_curr, to_curr)
+    
+    # Try fuzzy mapping if not matched exactly
+    for k, v in _CURRENCY_MAP.items():
+        if k in from_curr:
+            fr_code = v
+            break
+    for k, v in _CURRENCY_MAP.items():
+        if k in to_curr:
+            to_code = v
+            break
+            
+    fr, to = fr_code, to_code
     d = _get("https://api.frankfurter.app/latest", params={"from": fr, "to": to}).json()
     if to not in d.get("rates", {}):
         return {"error": f"cannot convert {fr}->{to}"}
@@ -83,18 +124,32 @@ def convert_currency(amount: float, from_currency: str, to_currency: str) -> dic
             "result": round(float(amount) * rate, 2)}
 
 
-# ---------------------------------------------------------------- stock (Yahoo Finance)
+# ---------------------------------------------------------------- stock (Yahoo Finance via yfinance)
 def get_stock_quote(symbol: str) -> dict:
-    d = _get(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}").json()
-    res = (d.get("chart", {}).get("result") or [])
-    if not res:
-        return {"error": f"symbol '{symbol}' not found"}
-    m = res[0]["meta"]
-    price, prev = m.get("regularMarketPrice"), m.get("chartPreviousClose")
-    chg = round(price - prev, 2) if price and prev else None
-    pct = round((chg / prev) * 100, 2) if chg is not None and prev else None
-    return {"symbol": symbol.upper(), "price": price, "currency": m.get("currency"),
-            "previous_close": prev, "change": chg, "change_pct": pct}
+    sym = symbol.upper().strip()
+
+    # Primary: yfinance .history() — downloads OHLCV directly and bypasses
+    # Yahoo Finance's aggressive bot-detection on the JSON quote endpoints.
+    try:
+        import yfinance as yf
+        ticker = yf.Ticker(sym)
+        hist = ticker.history(period="5d", auto_adjust=True)
+        if not hist.empty:
+            price = round(float(hist["Close"].iloc[-1]), 4)
+            prev = round(float(hist["Close"].iloc[-2]), 4) if len(hist) > 1 else None
+            chg = round(price - prev, 2) if prev is not None else None
+            pct = round((chg / prev) * 100, 2) if chg is not None and prev else None
+            currency = "USD"
+            try:
+                currency = ticker.fast_info.currency or "USD"
+            except Exception:
+                pass
+            return {"symbol": sym, "price": price, "currency": currency,
+                    "previous_close": prev, "change": chg, "change_pct": pct}
+    except Exception:
+        pass
+
+    return {"error": f"Could not retrieve quote for '{sym}'. Yahoo Finance may be temporarily unavailable."}
 
 
 # ---------------------------------------------------------------- crypto (CoinGecko)

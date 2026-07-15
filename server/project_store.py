@@ -68,29 +68,32 @@ def ingest_file(project_id: str, doc_id: str, filename: str, path: str) -> int:
 
 def retrieve(project_id: str, query: str, n: int = 6) -> list[dict]:
     """Return top-n project chunks for a query, scoped to the project (with citation info)."""
-    coll = _coll()
     try:
+        coll = _coll()
         if coll.count() == 0:
             return []
-    except Exception:
+        emb = _emb().embed_query(query)
+        res = coll.query(query_embeddings=[emb], n_results=n,
+                         where={"project_id": project_id},
+                         include=["documents", "metadatas", "distances"])
+        out = []
+        for doc, meta, dist in zip(res["documents"][0], res["metadatas"][0], res["distances"][0]):
+            out.append({
+                "text": doc,
+                "title": meta.get("filename", meta.get("title", "document")),
+                "source": "project",
+                "doc_id": meta.get("doc_id", ""),
+                "project_id": project_id,
+                "page": meta.get("page", ""),
+                "element_type": meta.get("element_type", "text"),
+                "rrf_score": round(1.0 - dist, 4),
+            })
+        return out
+    except Exception as e:
+        import traceback
+        print(f"[project_store.retrieve failed] project_id={project_id}, query={query}: {e}")
+        traceback.print_exc()
         return []
-    emb = _emb().embed_query(query)
-    res = coll.query(query_embeddings=[emb], n_results=n,
-                     where={"project_id": project_id},
-                     include=["documents", "metadatas", "distances"])
-    out = []
-    for doc, meta, dist in zip(res["documents"][0], res["metadatas"][0], res["distances"][0]):
-        out.append({
-            "text": doc,
-            "title": meta.get("filename", meta.get("title", "document")),
-            "source": "project",
-            "doc_id": meta.get("doc_id", ""),
-            "project_id": project_id,
-            "page": meta.get("page", ""),
-            "element_type": meta.get("element_type", "text"),
-            "rrf_score": round(1.0 - dist, 4),
-        })
-    return out
 
 
 def delete_file(doc_id: str) -> None:

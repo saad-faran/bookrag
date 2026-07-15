@@ -136,17 +136,55 @@ def make_llm(model: str, temperature: float = 0.2):
         api_key=config.LLM_API_KEY,
         temperature=temperature,
         timeout=config.LLM_TIMEOUT,
-        # Groq's free tier is ~6k tokens/MINUTE; a burst of questions can transiently 429.
-        # Retry with backoff so a turn completes (slower) instead of failing mid-answer.
         max_retries=int(os.getenv("BOOKRAG_LLM_RETRIES", "4")),
-        # NOTE: uncomment if your endpoint needs an auth header:
-        # default_headers={"Authorization": f"Bearer {config.LLM_API_KEY}"},
+        # Disable Qwen3 thinking mode — prevents empty-output errors when the model
+        # enters a reasoning loop that produces no output tokens.
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
+
+
+def _merge_system_messages(messages: list[dict]) -> list[dict]:
+    """Merge all contiguous system messages at the start of the list into one."""
+    system_contents = []
+    other_messages = []
+    for msg in messages:
+        if isinstance(msg, dict) and msg.get("role") == "system":
+            if not other_messages:  # contiguous at the start
+                content = msg.get("content", "")
+                if content:
+                    system_contents.append(content)
+            else:
+                other_messages.append({"role": "user", "content": f"[System Note] {msg.get('content')}"})
+        else:
+            other_messages.append(msg)
+            
+    if system_contents:
+        merged_system = "\n\n".join(system_contents)
+        return [{"role": "system", "content": merged_system}] + other_messages
+    return other_messages
 
 
 def invoke_text(llm: ChatOpenAI, messages: list[dict]) -> str:
     """Call the LLM with a list of {'role','content'} dicts; return the text."""
-    return llm.invoke(messages).content.strip()
+    merged = _merge_system_messages(messages)
+    try:
+        result = llm.invoke(merged).content.strip()
+        if result:
+            return result
+        # Empty content — retry once with only the last user message to avoid
+        # triggering a thinking-mode loop on complex prompts.
+        last_user = next((m for m in reversed(merged) if m.get("role") == "user"), None)
+        if last_user:
+            result = llm.invoke([last_user]).content.strip()
+        return result or ""
+    except Exception as e:
+        err = str(e)
+        # Re-raise anything that isn't the empty-output error
+        if "empty" not in err.lower() and "output text" not in err.lower():
+            raise
+        # Fallback: strip system message and retry bare
+        bare = [m for m in merged if m.get("role") != "system"]
+        return llm.invoke(bare or merged[-1:]).content.strip() if bare else ""
 
 
 _FENCE = re.compile(r"^```(?:json)?|```$", re.MULTILINE)

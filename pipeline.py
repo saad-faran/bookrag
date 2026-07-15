@@ -91,7 +91,8 @@ def build_graph():
             "   - \"search\"  : needs current, real-world or recent web info NOT in a finance "
             "document library — latest news, recent events, today's headlines, a current fact.\n"
             "   - \"rag\"     : answerable from a finance/business/wealth document corpus "
-            "(companies, filings, markets, investing concepts).\n"
+            "(companies, filings, markets, investing concepts), OR refers to the user's uploaded "
+            "files, custom project files, or documents.\n"
             "   - \"general\" : conversational (hi, thanks, who made you, what can you do).\n"
             'Respond ONLY with: {"rewritten_query": "...", "route": "tool|search|rag|general"}\n\n'
             f"User query: {raw}"
@@ -116,7 +117,10 @@ def build_graph():
         try:
             from server.project_store import retrieve as proj_ret
             proj = proj_ret(project_id, query, n=6)
-        except Exception:
+        except Exception as e:
+            import traceback
+            print(f"[project_store.retrieve failed] project_id={project_id}, query={query}")
+            traceback.print_exc()
             proj = []
         if not proj:
             return base
