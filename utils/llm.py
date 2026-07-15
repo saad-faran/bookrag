@@ -7,6 +7,7 @@ are done with plain-text + defensive JSON parsing (no tool-calling), per spec.
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from types import SimpleNamespace
@@ -92,6 +93,13 @@ class MockChat:
             return SimpleNamespace(content="**[MOCK]** Based on the web results [1][2], here's a concise "
                                            "summary (set a GROQ_API_KEY for real synthesis).")
 
+        if "verify whether independent sources agree" in low:  # cross-reference node
+            return SimpleNamespace(content=json.dumps({
+                "consensus": "agree",
+                "agreements": ["All sources describe the same core facts."],
+                "conflicts": [],
+                "note": "The retrieved sources are consistent with the answer."}))
+
         if "strict fact-checker" in low:
             return SimpleNamespace(content=json.dumps(
                 {"is_grounded": True, "reason": "All claims trace to the provided excerpts."}))
@@ -128,7 +136,9 @@ def make_llm(model: str, temperature: float = 0.2):
         api_key=config.LLM_API_KEY,
         temperature=temperature,
         timeout=config.LLM_TIMEOUT,
-        max_retries=1,
+        # Groq's free tier is ~6k tokens/MINUTE; a burst of questions can transiently 429.
+        # Retry with backoff so a turn completes (slower) instead of failing mid-answer.
+        max_retries=int(os.getenv("BOOKRAG_LLM_RETRIES", "4")),
         # NOTE: uncomment if your endpoint needs an auth header:
         # default_headers={"Authorization": f"Bearer {config.LLM_API_KEY}"},
     )

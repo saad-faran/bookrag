@@ -36,10 +36,10 @@ def _next_node(node: str, s: dict) -> str | None:
     if node == "generate":
         return "evaluate_grounding"
     if node == "evaluate_grounding":
-        return "build_final_answer" if (s.get("is_grounded") or s.get("retry_count", 0) >= 1) else "expand_query"
+        return "cross_reference" if (s.get("is_grounded") or s.get("retry_count", 0) >= 1) else "expand_query"
     if node == "expand_query":
         return "retrieve"
-    if node in ("general_answer", "tool_call", "internet_search"):
+    if node in ("general_answer", "tool_call", "internet_search", "cross_reference"):
         return "build_final_answer"
     return None
 
@@ -63,6 +63,11 @@ def _summary(node: str, s: dict) -> str:
         return f"🔧 called {calls[0]['name']}(…)" if calls else "tool call"
     if node == "internet_search":
         return f"🌐 web search · {len(s.get('search_results', []))} results"
+    if node == "cross_reference":
+        x = s.get("cross_reference", {}) or {}
+        icons = {"agree": "✓ sources agree", "partial": "~ partial overlap",
+                 "conflict": "⚠ sources conflict", "single": "single source"}
+        return f"{icons.get(x.get('consensus'), 'checked')} · {x.get('sources_checked', 0)} docs"
     if node == "build_final_answer":
         return f"{len(s.get('sources', []))} sources attached"
     return ""
@@ -126,6 +131,7 @@ async def run_stream(query: str, context: list[dict], project_id: str = ""):
         "attempts": attempts,          # draft answer(s) BEFORE grounding + verdicts
         "tool_calls": state.get("tool_calls", []),      # {name, args, result}
         "search_results": state.get("search_results", []),  # {title, snippet, url}
+        "cross_reference": state.get("cross_reference", {}),  # source agreement/conflicts
         "final_answer": answer,
         "sources": sources,
         "timings": timings,            # ms per node (summed across retries)

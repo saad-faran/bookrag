@@ -84,6 +84,46 @@ export default function RunInspector({ record }) {
             </div>
           )}
 
+          {/* cross-reference */}
+          {record.cross_reference && record.cross_reference.consensus && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">
+                Cross-reference · {record.cross_reference.sources_checked} source docs
+              </div>
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--card2)] p-2">
+                {(() => {
+                  const c = record.cross_reference.consensus;
+                  const map = {
+                    agree: ["✓ sources agree", "text-emerald-400"],
+                    partial: ["~ partial overlap (no contradiction)", "text-sky-400"],
+                    conflict: ["⚠ sources conflict", "text-amber-400"],
+                    single: ["single source — nothing to cross-check", "text-slate-400"],
+                  };
+                  const [label, cls] = map[c] || [c, "text-slate-400"];
+                  return <div className={`text-[11.5px] font-medium ${cls}`}>{label}</div>;
+                })()}
+                {record.cross_reference.note &&
+                  <div className="text-[10.5px] text-slate-500 mt-1">{record.cross_reference.note}</div>}
+                {(record.cross_reference.agreements || []).length > 0 && (
+                  <ul className="mt-1.5 space-y-0.5">
+                    {record.cross_reference.agreements.map((a, i) => (
+                      <li key={i} className="text-[10.5px] text-slate-400">✓ {a}</li>
+                    ))}
+                  </ul>
+                )}
+                {(record.cross_reference.conflicts || []).length > 0 && (
+                  <ul className="mt-1.5 space-y-0.5">
+                    {record.cross_reference.conflicts.map((c, i) => (
+                      <li key={i} className="text-[10.5px] text-amber-300">
+                        ⚠ {c.claim}{c.detail ? ` — ${c.detail}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* tool calls */}
           {(record.tool_calls || []).length > 0 && (
             <div>

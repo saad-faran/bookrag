@@ -6,12 +6,13 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   Compass, Search, PenLine, ShieldCheck, RefreshCw, MessageCircle, Package, Check, Loader2,
-  GitBranch, Wrench, Globe,
+  GitBranch, Wrench, Globe, Scale,
 } from "lucide-react";
 import PanelControls from "./PanelControls.jsx";
 
 const ICONS = { compass: Compass, search: Search, pen: PenLine, shield: ShieldCheck,
-  refresh: RefreshCw, chat: MessageCircle, package: Package, wrench: Wrench, globe: Globe };
+  refresh: RefreshCw, chat: MessageCircle, package: Package, wrench: Wrench, globe: Globe,
+  scale: Scale };
 
 const POS = {
   rewrite_and_route: { x: 40, y: 15 },
@@ -22,7 +23,8 @@ const POS = {
   generate:          { x: 40, y: 215 },
   evaluate_grounding:{ x: 40, y: 305 },
   expand_query:      { x: 235, y: 305 },
-  build_final_answer:{ x: 40, y: 405 },
+  cross_reference:   { x: 40, y: 395 },
+  build_final_answer:{ x: 40, y: 485 },
 };
 
 // target handles available: Top (default), "l" (Left). source handles: Bottom (default), "r" (Right).
@@ -33,7 +35,8 @@ const EDGES = [
   { id: "e10", source: "rewrite_and_route", target: "internet_search", sourceHandle: "r", targetHandle: "l" },
   { id: "e3", source: "retrieve", target: "generate" },
   { id: "e4", source: "generate", target: "evaluate_grounding" },
-  { id: "e5", source: "evaluate_grounding", target: "build_final_answer" },
+  { id: "e5", source: "evaluate_grounding", target: "cross_reference" },
+  { id: "e13", source: "cross_reference", target: "build_final_answer" },
   { id: "e6", source: "evaluate_grounding", target: "expand_query", sourceHandle: "r", targetHandle: "l" },
   { id: "e7", source: "expand_query", target: "retrieve", targetHandle: "l" },
   { id: "e8", source: "general_answer", target: "build_final_answer", targetHandle: "l" },

@@ -77,6 +77,16 @@ NODES = [
                 "the results with inline citations.",
     },
     {
+        "id": "cross_reference",
+        "label": "Cross-Reference",
+        "icon": "scale",
+        "model": "router",
+        "short": "Checks sources agree",
+        "desc": "Compares the retrieved sources against each other: do they agree on the answer's "
+                "key claims, cover different aspects, or actually contradict? Conflicts are surfaced "
+                "rather than silently averaged away.",
+    },
+    {
         "id": "build_final_answer",
         "label": "Finalize",
         "icon": "package",

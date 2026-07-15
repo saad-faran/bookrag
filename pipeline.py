@@ -42,6 +42,7 @@ class RAGState(TypedDict, total=False):
     tool_calls: list
     search_results: list
     project_id: str
+    cross_reference: dict
 
 
 DISCLAIMER = (
@@ -52,14 +53,19 @@ DISCLAIMER = (
 )
 
 
-def _format_docs(docs: list[dict]) -> str:
+def _format_docs(docs: list[dict], cap: int | None = None) -> str:
+    """Render excerpts for a prompt. `cap` trims each excerpt — the grounding evaluator
+    passes a smaller cap because it only needs to trace claims, not read full passages.
+    Token budget matters: Groq's free tier is ~6k tokens/MINUTE, and excerpts would
+    otherwise be sent twice per turn (generate + evaluate)."""
+    cap = cap or config.EXCERPT_CHARS
     blocks = []
     for d in docs:
         kind = "TABLE" if d.get("element_type") == "table" else "TEXT"
         page = f", p.{d['page']}" if d.get("page") else ""
         text = d["text"]
-        if len(text) > config.EXCERPT_CHARS:          # trim to keep the token budget low
-            text = text[:config.EXCERPT_CHARS] + " …"
+        if len(text) > cap:
+            text = text[:cap] + " …"
         blocks.append(f"[{kind}] Source: {d.get('title', 'document')} ({d.get('source', '')}{page})\n{text}\n---")
     return "\n".join(blocks)
 
@@ -171,7 +177,7 @@ def build_graph():
         )
         user = (
             f"Answer to evaluate:\n{state['generated_answer']}\n\n"
-            f"Source excerpts used:\n{_format_docs(state['retrieved_docs'])}\n\n"
+            f"Source excerpts used:\n{_format_docs(state['retrieved_docs'], cap=300)}\n\n"
             "Instructions:\n- Check each factual claim against the excerpts.\n"
             "- If ANY claim cannot be traced to an excerpt, mark is_grounded false.\n"
             "- Conversational filler does not count as a claim.\n- Be strict.\n"
@@ -184,6 +190,51 @@ def build_graph():
             "is_grounded": bool(data.get("is_grounded", False)),
             "grounding_reason": data.get("reason", ""),
         }
+
+    def cross_reference(state: RAGState) -> RAGState:
+        """Do the retrieved sources actually agree with each other? Flags contradictions."""
+        docs = state.get("retrieved_docs", [])
+        if not config.CROSS_REFERENCE:
+            return {"cross_reference": {}}
+        titles = list(dict.fromkeys([d.get("title", "") for d in docs if d.get("title")]))
+        if len(titles) < 2:
+            return {"cross_reference": {
+                "consensus": "single", "sources_checked": len(titles),
+                "agreements": [], "conflicts": [],
+                "note": "Only one source document backed this answer — nothing to cross-check."}}
+
+        # Keep this prompt LEAN — it runs on every grounded RAG turn, so a fat prompt here
+        # (full excerpts) measurably slowed the whole pipeline. Short snippets are enough
+        # to spot agreement/contradiction.
+        brief = "\n".join(
+            f"[{i+1}] {d.get('title', 'doc')}: {' '.join(d['text'].split())[:220]}"
+            for i, d in enumerate(docs[:4]))
+        system = ("You verify whether independent sources agree. Respond ONLY with compact valid "
+                  "JSON, no explanation, no markdown fences. Keep every string under 20 words.")
+        user = (
+            f"Answer:\n{state.get('generated_answer', '')[:600]}\n\n"
+            f"Sources:\n{brief}\n\n"
+            "Compare the sources against the answer's key factual claims.\n"
+            "- \"agree\": sources are consistent with each other.\n"
+            "- \"partial\": sources cover different aspects but don't contradict.\n"
+            "- \"conflict\": at least two sources disagree on a factual claim.\n"
+            'Respond ONLY with: {"consensus":"agree|partial|conflict",'
+            '"agreements":["short point"],"conflicts":[{"claim":"...","detail":"..."}],'
+            '"note":"one sentence"}'
+        )
+        data = parse_json(invoke_text(router, [
+            {"role": "system", "content": system}, {"role": "user", "content": user},
+        ]), default={}) or {}
+        consensus = data.get("consensus")
+        if consensus not in ("agree", "partial", "conflict"):
+            consensus = "partial"
+        return {"cross_reference": {
+            "consensus": consensus,
+            "sources_checked": len(titles),
+            "agreements": (data.get("agreements") or [])[:4],
+            "conflicts": (data.get("conflicts") or [])[:4],
+            "note": (data.get("note") or "")[:200],
+        }}
 
     def expand_query(state: RAGState) -> RAGState:
         system = "You are a search query expander. Respond ONLY with the expanded query string, nothing else."
@@ -311,7 +362,7 @@ def build_graph():
 
     def route_after_eval(state: RAGState) -> str:
         if state.get("is_grounded") or state.get("retry_count", 0) >= 1:
-            return "build_final_answer"
+            return "cross_reference"
         return "expand_query"
 
     g = StateGraph(RAGState)
@@ -320,7 +371,7 @@ def build_graph():
         ("generate", generate), ("evaluate_grounding", evaluate_grounding),
         ("expand_query", expand_query), ("general_answer", general_answer),
         ("tool_call", tool_call), ("internet_search", internet_search),
-        ("build_final_answer", build_final_answer),
+        ("cross_reference", cross_reference), ("build_final_answer", build_final_answer),
     ]:
         g.add_node(name, fn)
 
@@ -332,7 +383,8 @@ def build_graph():
     g.add_edge("retrieve", "generate")
     g.add_edge("generate", "evaluate_grounding")
     g.add_conditional_edges("evaluate_grounding", route_after_eval,
-                            {"expand_query": "expand_query", "build_final_answer": "build_final_answer"})
+                            {"expand_query": "expand_query", "cross_reference": "cross_reference"})
+    g.add_edge("cross_reference", "build_final_answer")
     g.add_edge("expand_query", "retrieve")
     g.add_edge("general_answer", "build_final_answer")
     g.add_edge("tool_call", "build_final_answer")

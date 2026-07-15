@@ -51,7 +51,12 @@ N_SPARSE = 15
 N_FINAL = int(os.getenv("BOOKRAG_N_FINAL", "5"))   # excerpts sent to the LLM (fewer = fewer tokens)
 RRF_K = 60
 # Cap chars per excerpt in the LLM prompt so a huge SEC table can't blow the token budget.
-EXCERPT_CHARS = int(os.getenv("BOOKRAG_EXCERPT_CHARS", "800"))
+# Groq's free tier allows only ~6k tokens/MINUTE, and excerpts are sent to both the
+# generator and the grounding evaluator — keep this lean or demos get rate-limited.
+EXCERPT_CHARS = int(os.getenv("BOOKRAG_EXCERPT_CHARS", "450"))
+# Cross-reference costs one extra (small) LLM call per grounded RAG turn. Set to 0 to
+# trade the source-agreement check for lower latency / token use.
+CROSS_REFERENCE = os.getenv("BOOKRAG_CROSS_REFERENCE", "1") == "1"
 
 # ------------------------------------------------------------------ LLM (OpenAI-compatible)
 # Any OpenAI-compatible endpoint works. Provider auto-selects: Groq if GROQ_API_KEY is
