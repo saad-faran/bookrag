@@ -216,19 +216,38 @@ def build_graph():
 
     def tool_call(state: RAGState) -> RAGState:
         raw = state["raw_query"]
+        # Built-in tools + any tools discovered from connected MCP servers.
+        mcp_menu = ""
+        try:
+            from server import mcp_client
+            mcp_menu = mcp_client.menu()
+        except Exception:  # noqa: BLE001
+            mcp_client = None  # type: ignore
+
         # 1) pick a tool + args (JSON — portable + mockable)
         sel_system = (
             "You are a tool router. Choose the ONE best tool for the user's request and its "
             "arguments. Respond ONLY with JSON: {\"tool\": \"name\", \"args\": {...}}.\n\nTools:\n"
-            + TOOL_MENU
+            + TOOL_MENU + (("\n" + mcp_menu) if mcp_menu else "")
         )
         sel = parse_json(invoke_text(router, [
             {"role": "system", "content": sel_system},
             {"role": "user", "content": raw},
         ]), default={})
         name, args = sel.get("tool", ""), sel.get("args", {}) or {}
-        result = execute_tool(name, args) if name else {"error": "no tool selected"}
-        calls = [{"name": name, "args": args, "result": result}]
+
+        if name.startswith("mcp:"):                       # tool served by an MCP server
+            parts = name.split(":", 2)
+            if len(parts) == 3:
+                from server import mcp_client as _mc
+                result = _mc.call_tool(parts[1], parts[2], args)
+                via = f"mcp:{parts[1]}"
+            else:
+                result, via = {"error": f"bad MCP tool name '{name}'"}, "mcp"
+        else:
+            result = execute_tool(name, args) if name else {"error": "no tool selected"}
+            via = "builtin"
+        calls = [{"name": name, "args": args, "result": result, "via": via}]
 
         # 2) synthesize a natural answer from the tool result
         syn_system = (

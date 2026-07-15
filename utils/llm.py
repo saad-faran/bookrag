@@ -31,13 +31,20 @@ class MockChat:
     def invoke(self, messages: list[dict], *_, **__):
         text = "\n".join(m.get("content", "") for m in messages if isinstance(m, dict))
         low = text.lower()
+        # the user's actual message (NOT the system prompt, which contains the tool menu)
+        user_msg = ""
+        for m in messages:
+            if isinstance(m, dict) and m.get("role") == "user":
+                user_msg = m.get("content", "")
         time.sleep(0.15)  # simulate a little latency so timings look real
 
         if "respond only with" in low and "rewritten_query" in low:
             q = _extract_after(text, "User query:") or "your question"
             ql = q.lower()
             if any(w in ql for w in ("weather", "stock", "price", "convert", "calculate",
-                                     "how much is", "% of", "crypto", "bitcoin", "what time")):
+                                     "how much is", "% of", "crypto", "bitcoin", "what time",
+                                     "compound interest", "double my money", "loan", "mortgage",
+                                     "monthly payment")):
                 route = "tool"
             elif any(w in ql for w in ("news", "latest", "today", "recent", "search the web",
                                        "current", "headlines")):
@@ -50,7 +57,19 @@ class MockChat:
             return SimpleNamespace(content=json.dumps({"rewritten_query": q.strip(), "route": route}))
 
         if "tool router" in low:  # tool selection
-            q = _extract_after(text, "").lower() + low
+            q = user_msg.lower()   # match the USER's request, not the tool menu
+            # MCP-served tools (namespaced mcp:<server>:<tool>)
+            if "loan" in q or "mortgage" in q or "monthly payment" in q:
+                return SimpleNamespace(content=json.dumps({
+                    "tool": "mcp:finance:loan_payment",
+                    "args": {"principal": 300000, "annual_rate_pct": 6.5, "years": 30}}))
+            if "compound interest" in q or ("invest" in q and "grow" in q):
+                return SimpleNamespace(content=json.dumps({
+                    "tool": "mcp:finance:compound_interest",
+                    "args": {"principal": 10000, "annual_rate_pct": 7, "years": 10}}))
+            if "double" in q and ("money" in q or "investment" in q):
+                return SimpleNamespace(content=json.dumps({
+                    "tool": "mcp:finance:rule_of_72", "args": {"annual_rate_pct": 8}}))
             if "weather" in q:
                 sel = {"tool": "get_weather", "args": {"location": "London"}}
             elif "convert" in q or " to eur" in q or " to usd" in q:

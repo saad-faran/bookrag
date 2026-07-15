@@ -1,0 +1,9 @@
+{
+  "_comment": "MCP servers BookRAG's client connects to. Standard mcpServers format (same shape as Claude Desktop). Relative .py args resolve against the repo root; 'python' resolves to the running interpreter. Add any third-party MCP server here and its tools are auto-discovered and offered to the agent.",
+  "mcpServers": {
+    "finance": {
+      "command": "python",
+      "args": ["mcp_servers/finance_tools.py"]
+    }
+  }
+}

@@ -45,6 +45,12 @@ def _startup() -> None:
         rag_service.warmup()  # load Chroma + BGE + compile graph once
     except Exception as e:  # noqa: BLE001
         print(f"[warmup] deferred: {e}")
+    try:  # discover MCP tools once so the first tool call is fast
+        from server import mcp_client
+        st = mcp_client.status()
+        print(f"[mcp] {st['connected']} server(s), {st['tool_count']} tool(s) discovered")
+    except Exception as e:  # noqa: BLE001
+        print(f"[mcp] discovery skipped: {e}")
 
 
 # ------------------------------------------------------------------ meta
@@ -70,6 +76,16 @@ def corpus() -> dict:
     if config.INGEST_STATE.exists():
         return json.loads(config.INGEST_STATE.read_text())
     return {}
+
+
+@app.get("/api/mcp")
+def mcp_status() -> dict:
+    """Connected MCP servers and the tools they expose to the agent."""
+    try:
+        from server import mcp_client
+        return mcp_client.status()
+    except Exception as e:  # noqa: BLE001
+        return {"connected": 0, "tool_count": 0, "servers": [], "error": str(e)}
 
 
 # ------------------------------------------------------------------ chats (auth-protected)

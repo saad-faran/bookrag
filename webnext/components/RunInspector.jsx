@@ -89,14 +89,29 @@ export default function RunInspector({ record }) {
             <div>
               <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Tool calls</div>
               <div className="space-y-1">
-                {record.tool_calls.map((t, i) => (
-                  <div key={i} className="rounded-lg border border-[var(--border)] bg-[var(--card2)] p-2 text-[11px]">
-                    <div className="font-mono text-indigo-300">{t.name}({JSON.stringify(t.args)})</div>
-                    <div className="font-mono text-[10.5px] text-emerald-300 mt-1 break-words">
-                      → {JSON.stringify(t.result)}
+                {record.tool_calls.map((t, i) => {
+                  const viaMcp = (t.via || "").startsWith("mcp");
+                  return (
+                    <div key={i} className="rounded-lg border border-[var(--border)] bg-[var(--card2)] p-2 text-[11px]">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        {viaMcp && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/30 shrink-0">
+                            via MCP · {t.via.split(":")[1]}
+                          </span>
+                        )}
+                        {!viaMcp && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 shrink-0">
+                            built-in
+                          </span>
+                        )}
+                      </div>
+                      <div className="font-mono text-indigo-300 break-words">{t.name}({JSON.stringify(t.args)})</div>
+                      <div className="font-mono text-[10.5px] text-emerald-300 mt-1 break-words">
+                        → {JSON.stringify(t.result)}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

@@ -25,6 +25,7 @@ tiktoken>=0.7
 python-dotenv>=1.0
 requests>=2.31
 ddgs>=9.0                # keyless internet search (DuckDuckGo) for the search tool
+mcp>=1.0                 # Model Context Protocol client (connects to external MCP servers)
 
 # --- multimodal ingestion ---
 pymupdf>=1.24          # PDF text + native table extraction + page rendering
